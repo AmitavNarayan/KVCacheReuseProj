@@ -1,6 +1,6 @@
 
 #!/bin/bash
-srun -p c12m85-a100-1 \
+srun -p a100-4-std \
   --account=csci_ga_3033-2026fa \
   --gres=gpu:1 \
   --cpus-per-task=12 \
