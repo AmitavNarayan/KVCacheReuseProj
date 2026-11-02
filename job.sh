@@ -7,5 +7,5 @@
 #SBATCH --mem=80G
 #SBATCH --time=08:00:00
 
-export HF_TOKEN="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"
+export HF_TOKEN="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"
 uv run python3 -m main
