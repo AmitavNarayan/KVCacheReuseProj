@@ -24,9 +24,10 @@ if __name__=="__main__":
     instruction = "Answer the question using the documents."
     num_cpus = 12
     batch_size = 32
+    qwen_instruct = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
 
 
-    tokenizer = load_model(model_name="Qwen3-Coder30B-A3B-Instruct", load_model=False)[0]
+    tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
     datasets = {}
     datasets["musique"] = load_dataset("json", data_files="musique/musique_ans_v1.0_train.jsonl", split="train")
     datasets["hotpot"] = load_dataset("parquet", data_files="hotpot_qa/train-*.parquet", split="train")
@@ -37,11 +38,11 @@ if __name__=="__main__":
 
     
     
-    model, tokenizer = load_model(model_name="Qwen3-Coder30B-A3B-Instruct")
+    model, tokenizer = load_model(model_name=qwen_instruct)
     kvlink_model, kvlink_optim = KVLink(model, tokenizer).train(loader["hotpot"])
     torch.save(kvlink_model.state_dict(), "kvlink_model.pt")
     torch.save(kvlink_optim.state_dict(), "kvlink_optim.pt")
-    model, tokenizer = load_model(model_name="Qwen3-Coder30B-A3B-Instruct")
+    model, tokenizer = load_model(model_name=qwen_instruct)
     kvpacket_model, kvpacket_optim = KVPacket(model, tokenizer).train(loader["musique"])
     torch.save(kvpacket_model.state_dict(), "kvpacket_model.pt")
     torch.save(kvpacket_optim.state_dict(), "kvpacket_optim.pt")
