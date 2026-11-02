@@ -37,11 +37,11 @@ if __name__=="__main__":
 
     
     
-    model, tokenizer = load_model()
+    model, tokenizer = load_model(model_name="Qwen3-30B-A3B-Instruct-2507")
     kvlink_model, kvlink_optim = KVLink(model, tokenizer).train(loader["hotpot"])
     torch.save(kvlink_model.state_dict(), "kvlink_model.pt")
     torch.save(kvlink_optim.state_dict(), "kvlink_optim.pt")
-    model, tokenizer = load_model()
+    model, tokenizer = load_model(model_name="Qwen3-30B-A3B-Instruct-2507")
     kvpacket_model, kvpacket_optim = KVPacket(model, tokenizer).train(loader["musique"])
     torch.save(kvpacket_model.state_dict(), "kvpacket_model.pt")
     torch.save(kvpacket_optim.state_dict(), "kvpacket_optim.pt")
