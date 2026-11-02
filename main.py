@@ -37,7 +37,7 @@ if __name__=="__main__":
 
     
     
-    model, tokenizer = load_model(model_name=" Qwen3-Coder30B-A3B-Instruct")
+    model, tokenizer = load_model(model_name="Qwen3-Coder30B-A3B-Instruct")
     kvlink_model, kvlink_optim = KVLink(model, tokenizer).train(loader["hotpot"])
     torch.save(kvlink_model.state_dict(), "kvlink_model.pt")
     torch.save(kvlink_optim.state_dict(), "kvlink_optim.pt")
