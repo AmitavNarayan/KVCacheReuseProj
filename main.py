@@ -29,8 +29,8 @@ if __name__=="__main__":
 
     tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
     datasets = {}
-    datasets["musique"] = load_dataset("json", data_files="musique/musique_ans_v1.0_train.jsonl", split="train")
-    datasets["hotpot"] = load_dataset("parquet", data_files="hotpot_qa/train-*.parquet", split="train")
+    datasets["musique"] = load_dataset("dgslibisey/MuSiQue", data_files="musique_ans_v1.0_train.jsonl", split="train")
+    datasets["hotpot"] = load_dataset("hotpot/hotpot_qa", "distractor", split="train")
     train_ds = ProcessDS(tokenizer, instruction).make_train_ds(num_cpus, datasets)
     loader = {} 
     for key in datasets:
