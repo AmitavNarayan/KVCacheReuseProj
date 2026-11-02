@@ -9,3 +9,6 @@ dependencies = [
     "transformers>=5.22.1",
     "wandb>=0.31.0",
 ]
+
+[tool.uv]
+override-dependencies = ["dill"]
