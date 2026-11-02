@@ -1,6 +1,6 @@
 bash
 #!/bin/bash
-sbatch -p c24m170-a100-2 \
+sbatch -p c24m170-a100-1 \
   --account=csci_ga_3033-2026fa \
   --gres=gpu:1 \
   --cpus-per-task=12 \
