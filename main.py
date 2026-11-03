@@ -34,7 +34,7 @@ if __name__=="__main__":
     train_ds = ProcessDS(tokenizer, instruction).make_train_ds(num_cpus, datasets)
     loader = {} 
     for key in datasets:
-        loader[key] = DataLoader(dataset=train_ds[key], shuffle=True, batch_size=batch_size, collate_fn = lambda batch: collate(batch, tokenizer.pad_token_id))
+        loader[key] = DataLoader(dataset=train_ds[key], shuffle=True)
 
     
     
