@@ -30,7 +30,7 @@ class KVLink():
         attn_mask[col_mask & row_mask] = False
         attn_mask = torch.where(attn_mask, 0.0, float('-inf')).to(self.model.dtype)
         attn_mask = einx.id("... -> B 1 ...", attn_mask, B=batch_size)
-        print(attn_mask.shape)
+        
         return attn_mask
 
     def get_loss(self, answer_tokens: torch.Tensor, answer_logits: torch.Tensor):
@@ -45,7 +45,8 @@ class KVLink():
         prompt_tokens = einx.id("A P, A D, A S -> A (P + D + S)", prefix_tokens, doc_tokens, suffix_tokens)
 
         attn_mask = self.get_attn_mask(prompt_tokens.shape[1], prefix_tokens.shape[1], doc_len, doc_tokens.shape[0])
-        
+        real = attn_lengths = (prompt_tokens != self.tokenizer.pad_token_id).sum(dim=1)
+        print(prompt_tokens.shape, real.float().mean().item(), real.max().item(), flush=True)
         prefill = self.model(prompt_tokens, attention_mask=attn_mask, logits_to_keep=1)
         answer_logits = einx.id("B 1 V, B T V -> B (1+T) V", prefill.logits, self.model(answer_tokens, past_key_values=prefill.past_key_values).logits[:, :-1, :])
         loss = self.get_loss(answer_tokens, answer_logits)
