@@ -8,7 +8,7 @@ from process_ds import ProcessDS
 from collate_fn import collate
 import torch
 
-def load_model(model_name: str, device: str = "cuda", pad_token: str = "<|finetune_right_pad_id|>", load_model: bool = True, load_tokenizer: bool = True):
+def load_model(model_name: str, device: str = "cuda", pad_token: str = None, load_model: bool = True, load_tokenizer: bool = True):
     retlist = []
     if load_model:
             model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -16,7 +16,7 @@ def load_model(model_name: str, device: str = "cuda", pad_token: str = "<|finetu
             retlist.append(model)
     if load_tokenizer: 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        tokenizer.pad_token = pad_token
+        if pad_token is not None: tokenizer.pad_token = pad_token
         retlist.append(tokenizer)
     return retlist
 
