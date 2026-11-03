@@ -1,4 +1,5 @@
 #!/bin/bash
+export WANDB_API_KEY=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
 ID=$(sbatch --parsable \
   -p c12m85-a100-1 \
   --account=csci_ga_3033-2026fa \
