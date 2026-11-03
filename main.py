@@ -23,7 +23,7 @@ def load_model(model_name: str, device: str = "cuda", pad_token: str = None, loa
 if __name__=="__main__":
     instruction = "Answer the question using the documents."
     num_cpus = 12
-    batch_size = 8
+    batch_size = 32
     qwen_instruct = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
 
