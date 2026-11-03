@@ -24,7 +24,7 @@ if __name__=="__main__":
     instruction = "Answer the question using the documents."
     num_cpus = 12
     batch_size = 32
-    qwen_instruct = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+    qwen_instruct = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
 
     tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
