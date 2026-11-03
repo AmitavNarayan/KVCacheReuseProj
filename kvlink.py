@@ -21,6 +21,7 @@ class KVLink():
         
 
     def get_attn_mask(self, prompt_len: int, prefix_len: int, doc_len: int, batch_size: int):
+        print(batch_size)
         block_len = doc_len + self.num_link_tokens
         row_mask = torch.arange(prompt_len, device=self.device).unsqueeze(1)
         col_mask = torch.arange(prompt_len, device=self.device).unsqueeze(0)
