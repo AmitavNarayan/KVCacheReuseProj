@@ -21,7 +21,6 @@ class KVLink():
         
 
     def get_attn_mask(self, prompt_len: int, prefix_len: int, doc_len: int, batch_size: int):
-        print(batch_size)
         block_len = doc_len + self.num_link_tokens
         row_mask = torch.arange(prompt_len, device=self.device).unsqueeze(1)
         col_mask = torch.arange(prompt_len, device=self.device).unsqueeze(0)
@@ -31,7 +30,7 @@ class KVLink():
         attn_mask[col_mask & row_mask] = False
         attn_mask = torch.where(attn_mask, 0.0, float('-inf')).to(self.model.dtype)
         attn_mask = einx.id("... -> B 1 ...", attn_mask, B=batch_size)
-
+        print(attn_mask.shape)
         return attn_mask
 
     def get_loss(self, answer_tokens: torch.Tensor, answer_logits: torch.Tensor):
