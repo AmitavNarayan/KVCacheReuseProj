@@ -54,7 +54,6 @@ class ProcessDS:
         batch_doc_tokens = []
         for example in batch_docs:
             batch_doc_tokens.append(self.tokenize(example))
-            while len(batch_doc_tokens[-1]) < 10: batch_doc_tokens[-1].append([self.tokenizer.pad_token_id])
         return batch_doc_tokens
 
     def get_tokens_from_batch(self, batch: dict[str, list], ds_name: str) -> dict:

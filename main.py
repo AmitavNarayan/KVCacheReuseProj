@@ -1,30 +1,27 @@
 
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from torch.utils.data import DataLoader
 from kvlink import KVLink
 from kvpacket import KVPacket
 from process_ds import ProcessDS
-from collate_fn import collate
 import torch
 
-def load_model(model_name: str, device: str = "cuda", pad_token: str = None, load_model: bool = True, load_tokenizer: bool = True):
+def load_model(model_name: str, load_model: bool = True, load_tokenizer: bool = True, model_dtype=torch.bfloat16):
     retlist = []
     if load_model:
-            model = AutoModelForCausalLM.from_pretrained(model_name)
-            model = model.to(device)
+            model = AutoModelForCausalLM.from_pretrained(model_name, model_dtype)
+            model = model.to("cuda")
             retlist.append(model)
     if load_tokenizer: 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        if pad_token is not None: tokenizer.pad_token = pad_token
+        tokenizer.pad_token = tokenizer.eos_token
         retlist.append(tokenizer)
     return retlist
 
 if __name__=="__main__":
     instruction = "Answer the question using the documents."
     num_cpus = 12
-    batch_size = 32
-    qwen_instruct = "Qwen/Qwen2.5-3B-Instruct"
+    qwen_instruct = "Qwen/Qwen2.5-1.5B-Instruct"
 
 
     tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
@@ -32,20 +29,10 @@ if __name__=="__main__":
     datasets["musique"] = load_dataset("dgslibisey/MuSiQue", data_files="musique_ans_v1.0_train.jsonl", split="train")
     datasets["hotpot"] = load_dataset("hotpotqa/hotpot_qa", "distractor", split="train")
     train_ds = ProcessDS(tokenizer, instruction).make_train_ds(num_cpus, datasets)
-    loader = {} 
-    for key in datasets:
-        loader[key] = DataLoader(dataset=train_ds[key], shuffle=True)
-
     
+    model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
+    KVLink(model, tokenizer).train(train_ds["hotpot"])
     
-    model, tokenizer = load_model(model_name=qwen_instruct)
-    kvlink_model, kvlink_optim = KVLink(model, tokenizer).train(loader["hotpot"])
-    torch.save(kvlink_model.state_dict(), "kvlink_model.pt")
-    torch.save(kvlink_optim.state_dict(), "kvlink_optim.pt")
-    model, tokenizer = load_model(model_name=qwen_instruct)
-    kvpacket_model, kvpacket_optim = KVPacket(model, tokenizer).train(loader["musique"])
-    torch.save(kvpacket_model.state_dict(), "kvpacket_model.pt")
-    torch.save(kvpacket_optim.state_dict(), "kvpacket_optim.pt")
 
 
     
