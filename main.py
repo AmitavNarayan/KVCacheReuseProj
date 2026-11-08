@@ -9,7 +9,7 @@ import torch
 def load_model(model_name: str, load_model: bool = True, load_tokenizer: bool = True, model_dtype=torch.bfloat16):
     retlist = []
     if load_model:
-            model = AutoModelForCausalLM.from_pretrained(model_name, model_dtype)
+            model = AutoModelForCausalLM.from_pretrained(model_name, dtype=model_dtype)
             model = model.to("cuda")
             retlist.append(model)
     if load_tokenizer: 
