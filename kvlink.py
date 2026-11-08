@@ -7,6 +7,7 @@ class KVLink():
     def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6):
         self.device = model.device
         self.model = model
+        self.model.gradient_checkpointing_enable()
         self.tokenizer = tokenizer
         self.num_link_tokens = num_link_tokens
         self.link_tokens = [f"<link{a+1}_{b+1}>" for a in range(max_num_docs) for b in range(num_link_tokens)]
