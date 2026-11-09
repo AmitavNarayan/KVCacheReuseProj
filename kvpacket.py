@@ -20,7 +20,7 @@ class Packetize(torch.nn.Module):
         return new_x 
 
 class KVPacket():
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, header_len: int = 8, lr: float=5e-2, max_new_tokens: int=64):
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, header_len: int = 8, lr: float=1e-3, max_new_tokens: int=64):
         self.device = model.device
         self.model = model
         self.embed = self.model.get_input_embeddings()
