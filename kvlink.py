@@ -3,6 +3,7 @@ import torch
 import wandb
 from hotpot_evaluate_v1 import f1_score
 from datasets import Dataset
+import torch.nn.functional as F
 
 class KVLink():
     def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6, max_new_tokens: int = 64, compute_dtype=torch.bfloat16):
@@ -57,7 +58,9 @@ class KVLink():
             label[:pos[-2]] = -100
             attn_mask = self.get_attn_mask(pos)
             with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
-                loss = self.model(prompt.reshape(1,-1), attention_mask=attn_mask.reshape(1,1,attn_mask.shape[0],-1), labels=label.reshape(1,-1)).loss
+                answer_len = example["answer"].shape[0]
+                output_logits = self.model(prompt.reshape(1,-1), attention_mask=attn_mask.reshape(1,1,attn_mask.shape[0],-1), logits_to_keep = answer_len + 1).logits[0, :-1]
+                loss = F.cross_entropy(output_logits, prompt[-answer_len:])
             wandb.log({"train-loss": loss.item()})
             loss = loss / step_size
             loss.backward()
