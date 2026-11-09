@@ -37,7 +37,7 @@ if __name__=="__main__":
         model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
         KVLink(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
     if method == "kvpacket": 
-        model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
+        model, tokenizer = load_model(model_name=qwen_instruct)
         KVPacket(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
     
 
