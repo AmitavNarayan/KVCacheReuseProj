@@ -26,11 +26,12 @@ if __name__=="__main__":
     tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
     datasets = {}
     datasets["musique"] = load_dataset("dgslibisey/MuSiQue", data_files="musique_ans_v1.0_train.jsonl", split="train")
-    datasets["hotpot"] = load_dataset("hotpotqa/hotpot_qa", "distractor", split="train")
+    datasets["hotpot_train"] = load_dataset("hotpotqa/hotpot_qa", "distractor", split="train")
+    datasets["hotpot_valid"] = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation")
     train_ds = ProcessDS(tokenizer, instruction).make_train_ds(num_cpus, datasets)
     
     model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
-    KVLink(model, tokenizer).train(train_ds["hotpot"])
+    KVLink(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
     
 
 
