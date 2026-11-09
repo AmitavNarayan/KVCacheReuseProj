@@ -17,7 +17,7 @@ class KVLink():
         self.tokenizer.add_special_tokens({"additional_special_tokens": self.link_tokens})
         self.model.resize_token_embeddings(len(tokenizer))
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
-        self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device).reshape(max_num_docs, num_link_tokens)
+        self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device, dtype=torch.long).reshape(max_num_docs, num_link_tokens)
         self.compute_dtype = compute_dtype
 
     def get_attn_mask(self, positions: torch.Tensor):
@@ -54,8 +54,6 @@ class KVLink():
         step = 1
         for example in train_examples:
             prompt, pos = self.get_prompt_pos(example)
-            label = prompt.clone()
-            label[:pos[-2]] = -100
             attn_mask = self.get_attn_mask(pos)
             with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
                 answer_len = example["answer"].shape[0]

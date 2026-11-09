@@ -5,6 +5,7 @@ from kvlink import KVLink
 from kvpacket import KVPacket
 from process_ds import ProcessDS
 import torch
+import sys
 
 def load_model(model_name: str, load_model: bool = True, load_tokenizer: bool = True, model_dtype=torch.bfloat16):
     retlist = []
@@ -27,8 +28,17 @@ if __name__=="__main__":
     datasets = {"hotpot_train": load_dataset("hotpotqa/hotpot_qa", "distractor", split="train"),
                 "hotpot_valid": load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation")}
     train_ds = ProcessDS(tokenizer, instruction).make_train_ds(num_cpus, datasets)
-    model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
-    KVLink(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
+    
+    method = sys.argv[1]
+    if method == "norepair": 
+        model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
+        KVLink(model, tokenizer, num_link_tokens=0).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
+    if method == "kvlink": 
+        model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
+        KVLink(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
+    if method == "kvpacket": 
+        model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
+        KVPacket(model, tokenizer).train(train_ds["hotpot_train"], train_ds["hotpot_valid"])
     
 
 
