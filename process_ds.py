@@ -32,6 +32,5 @@ class ProcessDS:
     def make_train_ds(self, num_cpus: int, ds: dict[str, Dataset]):
         train_ds = {}
         for ds_name in ds:
-            process_fn = lambda example: self.get_tokens(example, ds_name)
-            train_ds[ds_name] = ds[ds_name].map(process_fn, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch")
+            train_ds[ds_name] = ds[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch")
         return train_ds
