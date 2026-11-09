@@ -8,7 +8,7 @@ class ProcessDS:
         self.tokenizer = tokenizer
         self.inst = inst
     
-    def tokenize(self, text: str):
+    def tokenize(self, text: str | list[str]):
         return self.tokenizer(text, add_special_tokens=False)["input_ids"]
 
     def get_tokens(self, example: dict, ds_name: str) -> dict:
@@ -32,5 +32,5 @@ class ProcessDS:
     def make_train_ds(self, num_cpus: int, ds: dict[str, Dataset]):
         train_ds = {}
         for ds_name in ds:
-            train_ds[ds_name] = ds[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch")
+            train_ds[ds_name] = ds[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch", device="cuda")
         return train_ds

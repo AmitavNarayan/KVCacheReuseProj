@@ -1,12 +1,14 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import wandb
-from torch.utils.data import DataLoader
+from hotpot_evaluate_v1 import f1_score
+from datasets import Dataset
 
 class KVLink():
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6):
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6, max_new_tokens: int = 64, compute_dtype=torch.bfloat16):
         self.device = model.device
         self.model = model
+        self.model.generation_config.max_new_tokens=max_new_tokens
         self.model.gradient_checkpointing_enable()
         self.tokenizer = tokenizer
         self.num_link_tokens = num_link_tokens
@@ -15,6 +17,7 @@ class KVLink():
         self.model.resize_token_embeddings(len(tokenizer))
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
         self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device).reshape(max_num_docs, num_link_tokens)
+        self.compute_dtype = compute_dtype
 
     def get_attn_mask(self, pos: torch.Tensor):
         positions = pos
@@ -26,31 +29,63 @@ class KVLink():
         attn_mask[positions[0]:positions[-3], :positions[-3]][col_mask & row_mask] = False
         return attn_mask
 
-    def train(self, dataset: dict[str, torch.Tensor], step_size:int=32, compute_dtype=torch.bfloat16):
+    def get_prompt_pos(self, example: dict):
+        lens = [example["prefix"].shape[0], *[doc.shape[0]+self.num_link_tokens for doc in example["docs"]], example["suffix"].shape[0], example["answer"].shape[0]]
+        example["docs"] = torch.cat([torch.cat((doc, self.link_ids[i, :])) for i, doc in enumerate(example["docs"])])
+        prompt = torch.cat((example["prefix"], example["docs"], example["suffix"], example["answer"]))
+        pos = torch.tensor(lens, device=self.device).cumsum(0)
+        return prompt, pos
+
+    
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size:int=32, valid_freq:float=0.2, valid_size: int=100):
         wandb.init()
         self.model.train()
-        loader = DataLoader(dataset, batch_size=None, shuffle=True)
+        train_examples = train_dataset.shuffle()
+        valid_examples = valid_dataset.shuffle().select(range(valid_size))
+        valid_inputs = []
+        for example in valid_examples:
+            prompt, pos = self.get_prompt_pos(example)
+            answer_pos = pos[-2]
+            info = {}
+            info["prompt"] = prompt[:answer_pos]
+            info["mask"] = self.get_attn_mask(pos)[:answer_pos, :answer_pos]
+            info["answer"] = prompt[answer_pos:]
+            valid_inputs.append(info)
         step = 1
-        for example in loader:
-            for key in example: 
-                if key=="docs": 
-                    for i, doc in enumerate(example["docs"]): example["docs"][i] = doc.to(self.device)
-                else: example[key] = example[key].to(self.device)
-            lens = [example["prefix"].shape[0], *[doc.shape[0]+self.num_link_tokens for doc in example["docs"]], example["suffix"].shape[0], example["answer"].shape[0]]
-            example["docs"] = torch.cat([torch.cat((doc, self.link_ids[i, :])) for i, doc in enumerate(example["docs"])])
-            prompt = torch.cat((example["prefix"], example["docs"], example["suffix"], example["answer"]))
-            pos = torch.tensor(lens, device=self.device).cumsum(0)
+        for example in train_examples:
+            prompt, pos = self.get_prompt_pos(example)
             label = prompt.clone()
             label[:pos[-2]] = -100
             attn_mask = self.get_attn_mask(pos)
-            with torch.autocast(device_type="cuda", dtype=compute_dtype): 
-                loss = self.model(prompt[None, :], attention_mask=attn_mask[None, None, :, :], labels=label[None, :]).loss
+            with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
+                loss = self.model(prompt.reshape(1,-1), attention_mask=attn_mask.reshape(1,1,attn_mask.shape[0],-1), labels=label.reshape(1,-1)).loss
             wandb.log({"train-loss": loss.item()})
             loss = loss / step_size
             loss.backward()
             if step % step_size == 0:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+            if step % int(valid_freq * len(train_dataset)) == 0:
+                self.model.eval()
+                with torch.no_grad():
+                    score = 0
+                    for info in valid_inputs:
+                        prompt, mask, answer = info["prompt"], info["mask"], info["answer"]
+                        with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
+                            output = self.model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
+                        output_tokens = []
+                        while len(output_tokens) < self.model.generation_config.max_new_tokens:
+                            output_tokens.append(output.logits[0, -1].argmax())
+                            if output_tokens[-1]==self.tokenizer.eos_token_id:
+                                break
+                            with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
+                                output = self.model(output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, use_cache=True)
+                        output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
+                        answer_text = self.tokenizer.decode(answer, skip_special_tokens=True)
+                        score += f1_score(output_text, answer_text)[0] 
+                    score = score / len(valid_inputs)
+                    wandb.log({"f1-score": score})
+                self.model.train()
             step += 1
         wandb.finish()
         return
