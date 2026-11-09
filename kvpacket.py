@@ -48,7 +48,7 @@ class KVPacket():
         return student_prompt, attn_mask
 
  
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.2, valid_size: int=100):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.025, valid_size: int=100):
         wandb.init()
         self.model.train()
         train_examples = train_dataset.shuffle()
