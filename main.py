@@ -14,7 +14,6 @@ def load_model(model_name: str, load_model: bool = True, load_tokenizer: bool = 
             retlist.append(model)
     if load_tokenizer: 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        tokenizer.pad_token = tokenizer.eos_token
         retlist.append(tokenizer)
     return retlist
 
