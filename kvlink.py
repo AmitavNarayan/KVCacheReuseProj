@@ -19,8 +19,7 @@ class KVLink():
         self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device).reshape(max_num_docs, num_link_tokens)
         self.compute_dtype = compute_dtype
 
-    def get_attn_mask(self, pos: torch.Tensor):
-        positions = pos
+    def get_attn_mask(self, positions: torch.Tensor):
         row_mask = torch.arange(positions[0], positions[-3], device=self.device).unsqueeze(1)
         col_mask = torch.arange(0, positions[-3], device=self.device).unsqueeze(0)
         col_mask = col_mask < positions[torch.searchsorted(positions, row_mask, right=True)-1]
