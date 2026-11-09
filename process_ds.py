@@ -15,7 +15,7 @@ class ProcessDS:
         doctext = ""
         if ds_name == "musique":
             doctext = [par['title'] for par in example['paragraphs']], [par['paragraph_text'] for par in example['paragraphs']]
-        if ds_name == "hotpot":
+        if ds_name == "hotpot_train" or ds_name == "hotpot_valid":
             doctext = example['context']['title'], ["".join(sentences) for sentences in example['context']['sentences']]
         docs = [f"Document {i+1}: {title + "\n" + text}\n" for i, (title, text), in enumerate(zip(doctext[0], doctext[1]))]
         messages = [{"role": "system", "content": self.inst},
