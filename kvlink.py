@@ -35,7 +35,6 @@ class KVLink():
         prompt = torch.cat((example["prefix"], example["docs"], example["suffix"], example["answer"]))
         pos = torch.tensor(lens, device=self.device).cumsum(0)
         return prompt, pos
-
     
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size:int=32, valid_freq:float=0.025, valid_size: int=100):
         wandb.init()

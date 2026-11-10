@@ -22,6 +22,7 @@ if __name__=="__main__":
     instruction = "Answer the question using the documents."
     num_cpus = 12
     qwen_instruct = "Qwen/Qwen2.5-1.5B-Instruct"
+    qwen_instruct_coder = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
 
 
     tokenizer = load_model(model_name=qwen_instruct, load_model=False)[0]
