@@ -29,8 +29,8 @@ class ProcessDS:
         answer_tokens = self.tokenize(example['answer'])+[self.tokenizer.eos_token_id]
         return {"prefix": prefix_tokens, "suffix": suffix_tokens, "docs": doc_tokens, "answer": answer_tokens}
 
-    def make_train_ds(self, num_cpus: int, ds: dict[str, Dataset]):
-        train_ds = {}
+    def make_ds(self, num_cpus: int, ds: dict[str, Dataset]):
+        ds = {}
         for ds_name in ds:
-            train_ds[ds_name] = ds[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch", device="cuda")
-        return train_ds
+            ds[ds_name] = ds[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=ds[ds_name].column_names).with_format("torch", device="cuda")
+        return ds

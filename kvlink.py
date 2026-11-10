@@ -39,8 +39,8 @@ class KVLink():
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size:int=32, valid_freq:float=0.025, valid_size: int=100):
         wandb.init()
         self.model.train()
-        train_examples = train_dataset.shuffle()
-        valid_examples = valid_dataset.shuffle().select(range(valid_size))
+        train_examples = train_dataset
+        valid_examples = valid_dataset.select(range(valid_size))
         valid_inputs = []
         for example in valid_examples:
             prompt, pos = self.get_prompt_pos(example)
