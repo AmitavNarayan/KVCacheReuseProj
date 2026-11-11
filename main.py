@@ -38,15 +38,18 @@ if __name__=="__main__":
         
     if todo == "norepair": 
         model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
-        KVLink(model, tokenizer, num_link_tokens=0).train(ds["hotpot_train"], ds["hotpot_valid"])
+        alt_model = load_model(model_name = qwen_instruct_coder, load_tokenizer=False)[0]
+        KVLink(model, alt_model, tokenizer, num_link_tokens=0).train(ds["hotpot_train"], ds["hotpot_valid"])
 
     if todo == "kvlink": 
         model, tokenizer = load_model(model_name=qwen_instruct, model_dtype=torch.float32)
-        KVLink(model, tokenizer).train(ds["hotpot_train"], ds["hotpot_valid"])
+        alt_model = load_model(model_name = qwen_instruct_coder, load_tokenizer=False)[0]
+        KVLink(model, alt_model, tokenizer).train(ds["hotpot_train"], ds["hotpot_valid"])
 
     if todo == "kvpacket": 
         model, tokenizer = load_model(model_name=qwen_instruct)
-        KVPacket(model, tokenizer).train(ds["hotpot_train"], ds["hotpot_valid"])
+        alt_model = load_model(model_name = qwen_instruct_coder, load_tokenizer=False)[0]
+        KVPacket(model, alt_model, tokenizer).train(ds["hotpot_train"], ds["hotpot_valid"])
     
 
     

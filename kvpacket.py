@@ -20,9 +20,10 @@ class Packetize(torch.nn.Module):
         return new_x 
 
 class KVPacket():
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, header_len: int = 8, lr: float=1e-3, max_new_tokens: int=64):
+    def __init__(self, model: AutoModelForCausalLM, alt_model: AutoModelForCausalLM, tokenizer: AutoTokenizer, header_len: int = 8, lr: float=1e-3, max_new_tokens: int=64):
         self.device = model.device
         self.model = model
+        self.alt_model = alt_model
         self.embed = self.model.get_input_embeddings()
         self.model.generation_config.max_new_tokens=max_new_tokens
         for param in self.model.parameters(): param.requires_grad=False
@@ -86,13 +87,13 @@ class KVPacket():
                         valid_example["docs"] = [self.packetize(self.embed(doc)) for doc in valid_example["docs"]]
                         answer = valid_example["answer"]
                         prompt, mask = self.get_prompt_mask(valid_example)
-                        output = self.model(inputs_embeds=prompt.unsqueeze(0), attention_mask=mask.reshape(1,1, mask.shape[0], -1), logits_to_keep=1, use_cache=True)
+                        output = self.alt_model(inputs_embeds=prompt.unsqueeze(0), attention_mask=mask.reshape(1,1, mask.shape[0], -1), logits_to_keep=1, use_cache=True)
                         while len(output_tokens) < self.model.generation_config.max_new_tokens:
                             output_tokens.append(output.logits[0, -1].argmax())
                             if output_tokens[-1]==self.tokenizer.eos_token_id:
                                 break
                             output_embed = self.embed(output_tokens[-1].reshape(1,1))
-                            output = self.model(inputs_embeds = output_embed, past_key_values=output.past_key_values, use_cache=True)
+                            output = self.alt_model(inputs_embeds = output_embed, past_key_values=output.past_key_values, use_cache=True)
                         output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                         answer_text = self.tokenizer.decode(answer, skip_special_tokens=True)
                         score += f1_score(output_text, answer_text)[0] 

@@ -6,9 +6,10 @@ from datasets import Dataset
 import torch.nn.functional as F
 
 class KVLink():
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6, max_new_tokens: int = 64, compute_dtype=torch.bfloat16):
+    def __init__(self, model: AutoModelForCausalLM, alt_model: AutoModelForCausalLM, tokenizer: AutoTokenizer, max_num_docs: int=20, num_link_tokens: int = 5, lr: float=5e-6, max_new_tokens: int = 64, compute_dtype=torch.bfloat16):
         self.device = model.device
         self.model = model
+        self.alt_model = alt_model
         self.model.generation_config.max_new_tokens=max_new_tokens
         self.model.gradient_checkpointing_enable()
         self.tokenizer = tokenizer
@@ -71,14 +72,14 @@ class KVLink():
                     for info in valid_inputs:
                         prompt, mask, answer = info["prompt"], info["mask"], info["answer"]
                         with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
-                            output = self.model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
+                            output = self.alt_model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
                         output_tokens = []
                         while len(output_tokens) < self.model.generation_config.max_new_tokens:
                             output_tokens.append(output.logits[0, -1].argmax())
                             if output_tokens[-1]==self.tokenizer.eos_token_id:
                                 break
                             with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
-                                output = self.model(output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, use_cache=True)
+                                output = self.alt_model(output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, use_cache=True)
                         output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                         answer_text = self.tokenizer.decode(answer, skip_special_tokens=True)
                         score += f1_score(output_text, answer_text)[0] 
