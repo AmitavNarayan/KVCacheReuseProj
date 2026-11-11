@@ -17,56 +17,58 @@ class Translator(torch.nn.Module):
         nn.init.trunc_normal_(self.weight, mean, stdev, -3 * stdev, 3 * stdev)
     def forward(self, x: torch.Tensor):
         xw = einx.dot("l s d_in, l d_out d_in -> l s d_out", x, self.weight)
-        y = xw + self.bias.unsqueeze(1)
+        y = xw + self.bias.unsqueeze(1) 
         return y
 
 class Translate():
     def __init__(self, model: AutoModelForCausalLM, alt_model: AutoModelForCausalLM):
         self.model = model
         self.alt_model = alt_model
+        self.layers = self.model.config.num_hidden_layers + 1
         self.model.eval()
         self.alt_model.eval()
         self.device = self.model.device
-        self.translator = Translator(self.model.config.num_hidden_layers+1, model.config.hidden_size, alt_model.config.hidden_size, self.device, dtype=torch.float32)
+        self.translator = Translator(self.layers, model.config.hidden_size, alt_model.config.hidden_size, self.device, dtype=torch.float32)
         self.optim = torch.optim.AdamW(self.translator.parameters())
-        
-    def forward_pass(self, example: dict):
+
+    def get_x_y(self, example: dict):
         with torch.no_grad():
-            prompt = torch.cat((example["prefix"], torch.cat(example["docs"]), example["suffix"], example["answer"])).unsqueeze(0)
+            prompt = torch.cat((example["prefix"], torch.cat(list(example["docs"])), example["suffix"], example["answer"])).unsqueeze(0)
             x = torch.stack(self.model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
             y = torch.stack(self.alt_model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
-        layer_loss = einx.mean("b [...]", (self.translator(x) - y) ** 2)
-        return layer_loss
-
-    def record_loss(self, layer_loss: torch.Tensor, loss_type: str, step: int):
-        loss_dict = {f"{loss_type}-loss": layer_loss.mean().item()}
-        for l in range(self.model.config.num_hidden_layers+1):
-            loss_dict[f"{loss_type}-loss-layer-{l}"] = layer_loss[l].item()
-        wandb.log(loss_dict, step=step)
-        
+        return x, y
     
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 64, valid_size: int = 100, valid_freq: float = 0.025):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 64, valid_size: int = 100, valid_freq: float = 0.01):
         wandb.init()
         self.translator.train()
+        valid_ds = valid_dataset.select(range(valid_size))
+        y_mean = torch.zeros((self.layers, self.alt_model.config.hidden_size), device=self.device, dtype=torch.float64)
+        num_tokens = 0
+        for example in valid_ds: 
+            y = self.get_x_y(example)[1]
+            num_tokens += y.shape[1]
+            y_mean += y.sum(dim=1)
+        y_mean /= num_tokens
         loss = 0
         step = 1
-        valid_ds = valid_dataset.select(range(valid_size))
         for example in train_dataset:
-            layer_loss = self.forward_pass(example) 
-            self.record_loss(layer_loss, "train", step)
-            loss = layer_loss.mean()
-            loss = loss / step_size
+            x, y = self.get_x_y(example)
+            loss = ((self.translator(x) - y) ** 2).sum() / step_size
             loss.backward()
             if step % step_size == 0:
                 self.optim.step()
                 self.optim.zero_grad()
             if step % int(len(train_dataset) * valid_freq) == 0:
                 with torch.no_grad():
-                    layer_loss = 0
+                    pred_error_sum = torch.zeros((self.layers), device=self.device, dtype=torch.float64)
+                    standard_error_sum = torch.zeros((self.layers), device=self.device, dtype=torch.float64)
                     for example in valid_ds:
-                        layer_loss += self.forward_pass(example)
-                    layer_loss = layer_loss / valid_size
-                    self.record_loss(layer_loss, "valid", step)
+                        x,y = self.get_x_y(example)
+                        pred_error_sum += ((self.translator(x) - y) ** 2).sum(dim=(1,2))
+                        standard_error_sum += ((y_mean.unsqueeze(1) - y) ** 2).sum(dim=(1,2))
+                    unexplained_var = pred_error_sum / standard_error_sum
+                    valid_loss = {f"layer-{l}-loss": unexplained_var[l].item() for l in range(self.layers)}
+                    wandb.log(valid_loss)
             step += 1
         wandb.finish()
 
