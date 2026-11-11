@@ -74,7 +74,7 @@ class KVPacket():
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
-        t_output = self.vllm.generate([{"ids": example} for example in train_dataset], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
+        #t_output = self.vllm.generate([{"ids": example} for example in train_dataset], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
         t_output_ids = []
         for example in enumerate(train_dataset):
             print()
