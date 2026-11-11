@@ -1,11 +1,14 @@
 from transformers import PreTrainedTokenizer
 from datasets import Dataset, concatenate_datasets
 import torch
+from transformers import AutoTokenizer
+import pickle
 
 
 class ProcessDS:
-    def __init__(self, tokenizer: PreTrainedTokenizer, inst: str):
-        self.tokenizer = tokenizer
+    def __init__(self, inst: str = "Answer the question using the documents.",
+                 tokenizer_path: str = "Qwen2.5-1.5B-Instruct-Tokenizer"):
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.inst = inst
     
     def tokenize(self, text: str | list[str]):
@@ -29,8 +32,10 @@ class ProcessDS:
         answer_tokens = self.tokenize(example['answer'])+[self.tokenizer.eos_token_id]
         return {"prefix": prefix_tokens, "suffix": suffix_tokens, "docs": doc_tokens, "answer": answer_tokens}
 
-    def make_ds(self, num_cpus: int, input_datasets: dict[str, Dataset]):
+    def make_ds(self, 
+                input_datasets: dict[str, Dataset],
+                num_cpus: int = 12):
         datasets = {}
         for ds_name in input_datasets:
             datasets[ds_name] = input_datasets[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=input_datasets[ds_name].column_names).with_format("torch", device="cuda")
-        return datasets
+        pickle.dump(datasets, "datasets.pkl")

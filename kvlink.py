@@ -36,6 +36,32 @@ class KVLink():
         prompt = torch.cat((example["prefix"], example["docs"], example["suffix"], example["answer"]))
         pos = torch.tensor(lens, device=self.device).cumsum(0)
         return prompt, pos
+
+    def validate(self, valid_inputs: Dataset, is_alt: bool):
+        if is_alt: self.alt_model.eval()
+        else: self.model.eval()
+        with torch.no_grad():
+            score = 0
+            for info in valid_inputs:
+                prompt, mask, answer = info["prompt"], info["mask"], info["answer"]
+                with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
+                    if is_alt: output = self.alt_model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
+                    else: output = self.model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
+                output_tokens = []
+                while len(output_tokens) < self.model.generation_config.max_new_tokens:
+                    output_tokens.append(output.logits[0, -1].argmax())
+                    if output_tokens[-1]==self.tokenizer.eos_token_id:
+                        break
+                    with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
+                        if is_alt: output = self.alt_model(output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, use_cache=True)
+                        
+                output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
+                answer_text = self.tokenizer.decode(answer, skip_special_tokens=True)
+                score += f1_score(output_text, answer_text)[0] 
+            score = score / len(valid_inputs)
+            wandb.log({"f1-score": score})
+        if is_alt: self.alt_model.train()
+        else: self.model.train()
     
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size:int=32, valid_freq:float=0.01, valid_size: int=100):
         wandb.init()
@@ -66,26 +92,8 @@ class KVLink():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
             if step % int(valid_freq * len(train_dataset)) == 0:
-                self.model.eval()
-                with torch.no_grad():
-                    score = 0
-                    for info in valid_inputs:
-                        prompt, mask, answer = info["prompt"], info["mask"], info["answer"]
-                        with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
-                            output = self.alt_model(prompt.reshape(1,-1), attention_mask=mask.reshape(1,1,mask.shape[0], -1), logits_to_keep=1, use_cache=True)
-                        output_tokens = []
-                        while len(output_tokens) < self.model.generation_config.max_new_tokens:
-                            output_tokens.append(output.logits[0, -1].argmax())
-                            if output_tokens[-1]==self.tokenizer.eos_token_id:
-                                break
-                            with torch.autocast(device_type="cuda", dtype=self.compute_dtype): 
-                                output = self.alt_model(output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, use_cache=True)
-                        output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
-                        answer_text = self.tokenizer.decode(answer, skip_special_tokens=True)
-                        score += f1_score(output_text, answer_text)[0] 
-                    score = score / len(valid_inputs)
-                    wandb.log({"f1-score": score})
-                self.model.train()
+                f1 = self.validate(valid_inputs, is_alt=False)
+                alt_f1 = self.validate(valid_inputs, is_alt=True)
             step += 1
         wandb.finish()
         return
