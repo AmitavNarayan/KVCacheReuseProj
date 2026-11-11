@@ -6,7 +6,7 @@ import wandb
 import torch.nn.functional as F
 from datasets import Dataset
 from hotpot_evaluate_v1 import f1_score
-from vllm import LLM, SamplingParams
+#from vllm import LLM, SamplingParams
 
 class Packetize(torch.nn.Module):
     def __init__(self, device: str | torch.device, d_model: int, header_len: int, mean: float = 0, stdev: float = 0.02):
@@ -38,7 +38,7 @@ class KVPacket():
         self.packetize = Packetize(self.device, self.model.config.hidden_size, header_len)
         self.optimizer = torch.optim.AdamW(self.packetize.parameters(), lr=lr)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.vllm = LLM(model_path, dtype=model_dtype)
+        # self.vllm = LLM(model_path, dtype=model_dtype)
        
 
     def validate(self, valid_examples: Dataset, is_alt: bool = False):
@@ -77,7 +77,8 @@ class KVPacket():
         t_output = self.vllm.generate([{"ids": example} for example in train_dataset], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
         t_output_ids = []
         for example in enumerate(train_dataset):
-            t_output_ids.append(LLM())
+            print()
+            #t_output_ids.append(LLM())
         for step, example in enumerate(train_dataset, start=1):
             embed = self.model.get_input_embeddings()
             example["prefix"] = embed(example["prefix"])
