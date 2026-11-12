@@ -2,16 +2,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import wandb
 from hotpot_evaluate_v1 import f1_score
-from datasets import Dataset
-import torch.nn.functional as F
-from datasets import load_from_disk 
+from datasets import Dataset, load_from_disk
+import torch.nn.functional as F 
 
 
 class KVLink():
     def __init__(self, max_num_docs: int=20, num_link_tokens: int = 5, max_new_tokens: int = 64, compute_dtype=torch.bfloat16, model_path: str = "Qwen2.5-1.5B-Instruct", 
                  alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", 
                  tokenizer_path: str = "Qwen2.5-1.5B-Instruct", 
-                 model_dtype: torch.dtype = torch.bfloat16, 
+                 model_dtype: torch.dtype = torch.float32, 
                  device: torch.device | str = "cuda", 
                  lr: float=5e-6):
         self.device = device
@@ -21,12 +20,12 @@ class KVLink():
         self.model.config.use_cache = True
         self.alt_model.config.use_cache = True
         self.max_new_tokens = max_new_tokens
-        self.model.requires_grad_(False)
+
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.num_link_tokens = num_link_tokens
         self.link_tokens = [f"<link{a+1}_{b+1}>" for a in range(max_num_docs) for b in range(num_link_tokens)]
+        self.num_link_tokens = num_link_tokens
         self.tokenizer.add_special_tokens({"additional_special_tokens": self.link_tokens})
-        self.model.resize_token_dings(len(self.tokenizer))
+        self.model.resize_token_embeddings(len(self.tokenizer))
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
         self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device, dtype=torch.long).reshape(max_num_docs, num_link_tokens)
         self.compute_dtype = compute_dtype
@@ -35,15 +34,19 @@ class KVLink():
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()  
         self.alt_model.eval()  
-        with torch.no_grad() and torch.autocast(device_type=self.device, dtype=self.compute_dtype):
+        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
             score = 0
-            for i, valid_example in enumerate(valid_examples):
-                docs = [torch.cat((doc, self.link_ids[i, :])) for i, doc in enumerate(valid_example["docs"])]
+            for valid_example in valid_examples:
+                docs = valid_example["docs"]
                 doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), dtype=torch.bool, device=self.device).tril() for d in docs])[None, None]
-                pos_ids = valid_example["prefix"].shape[0] + torch.arange(doc_mask.shape[-1], device=self.device)
-                doc_cache = write_model(input_ids = torch.cat(docs)[None], attention_mask=doc_mask, position_ids=pos_ids[None]).past_key_values
-                cache = write_model(input_ids = valid_example["prefix"][None]).past_key_values
-                for i, layer in enumerate(doc_cache.layers): cache.update(layer.keys, layer.values, i)
+                doc_cache = write_model(input_ids = torch.cat(docs)[None], attention_mask=doc_mask).past_key_values
+                cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
+                idx = valid_example["prefix"].shape[0]
+                for doc in valid_example["docs"]: 
+                    doc_mask[idx+doc.shape[0]:idx+doc.shape[0]+self.num_link_tokens, :idx+doc.shape[0]]=1
+                    idx += doc.shape[0] + self.num_link_tokens
+                doc_mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
+                for idx, layer in enumerate(doc_cache.layers): cache.update(layer.keys, layer.values, idx)
                 output_tokens = []
                 output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
                 for _ in range(self.max_new_tokens):
@@ -92,6 +95,6 @@ class KVLink():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    KVLink.train(ds["hotpot_train"], ds["hotpot_valid"])
+    KVLink().train(ds["hotpot_train"], ds["hotpot_valid"])
 
 
