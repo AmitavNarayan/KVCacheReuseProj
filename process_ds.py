@@ -1,8 +1,6 @@
-from transformers import PreTrainedTokenizer
-from datasets import Dataset, concatenate_datasets
-import torch
+
+from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer
-import pickle
 
 
 class ProcessDS:
@@ -38,4 +36,4 @@ class ProcessDS:
         datasets = {}
         for ds_name in input_datasets:
             datasets[ds_name] = input_datasets[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=input_datasets[ds_name].column_names).with_format("torch", device="cuda")
-        pickle.dump(datasets, "datasets.pkl")
+        DatasetDict(datasets).save_to_disk("hotpot")

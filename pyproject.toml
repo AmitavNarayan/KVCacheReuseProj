@@ -8,6 +8,7 @@ dependencies = [
     "torch>=2.15.0",
     "transformers>=5.22.1",
     "wandb>=0.31.0",
+    "vllm",
 ]
 [tool.uv]
 override-dependencies = ["dill @ git+https://github.com/uqfoundation/dill"]

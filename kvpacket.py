@@ -6,7 +6,7 @@ import wandb
 import torch.nn.functional as F
 from datasets import Dataset
 from hotpot_evaluate_v1 import f1_score
-#from vllm import LLM, SamplingParams
+from vllm import LLM, SamplingParams
 
 class Packetize(torch.nn.Module):
     def __init__(self, device: str | torch.device, d_model: int, header_len: int, mean: float = 0, stdev: float = 0.02):
@@ -30,7 +30,7 @@ class KVPacket():
                  max_new_tokens: int=64):
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
-        self.alt_model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
+        self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
         self.model.config.use_cache = True
         self.alt_model.config.use_cache = True
         self.max_new_tokens = max_new_tokens
@@ -38,7 +38,7 @@ class KVPacket():
         self.packetize = Packetize(self.device, self.model.config.hidden_size, header_len)
         self.optimizer = torch.optim.AdamW(self.packetize.parameters(), lr=lr)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        # self.vllm = LLM(model_path, dtype=model_dtype)
+        self.vllm = LLM(model_path, dtype=model_dtype, gpu_memory_utilization=0.3, enable_sleep_mode=True)
        
 
     def validate(self, valid_examples: Dataset, is_alt: bool = False):
@@ -74,26 +74,20 @@ class KVPacket():
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
-        #t_output = self.vllm.generate([{"ids": example} for example in train_dataset], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
-        t_output_ids = []
-        for example in enumerate(train_dataset):
-            print()
-            #t_output_ids.append(LLM())
+        t_output = self.vllm.generate([{"prompt_token_ids": torch.cat([example["prefix"], *example["docs"], example["suffix"]])} for example in train_dataset.with_format(None)], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
+        self.vllm.sleep(level=2)
+        t_output_tokens = [torch.tensor(x.outputs[0].token_ids, device=self.device) for x in t_output]
         for step, example in enumerate(train_dataset, start=1):
             embed = self.model.get_input_embeddings()
-            example["prefix"] = embed(example["prefix"])
-            example["suffix"] = embed(example["suffix"])
-            example["docs"] = [embed(doc) for doc in example["docs"]]
-            t_prompt = torch.cat((example["prefix"], *example["docs"], example["suffix"]))
-            t_output = self.model.generate(inputs_embeds = t_prompt[None], do_sample=False, return_dict_in_generate=True, output_logits=True)
-            t_output_logits = torch.cat(t_output.logits)
-            t_output_embeds = embed(t_output.sequences[0])
+            answer = t_output_tokens[step-1]
+            t_tokens = torch.cat((example["prefix"], *example["docs"], example["suffix"], answer))
+            t_output_logits = self.model(input_ids=t_tokens[None], logits_to_keep=len(answer)+1).logits[0, :-1]
+            t_output_embeds = embed(answer)
 
-            segments = [example["prefix"], *[self.packetize(doc) for doc in example["docs"]], torch.cat((example["suffix"], t_output_embeds))]
+            segments = [embed(example["prefix"]), *[self.packetize(embed(doc)) for doc in example["docs"]], torch.cat((embed(example["suffix"]), t_output_embeds))]
             mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in segments])
             mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
-            t_len = t_output_embeds.shape[0]
-            s_output_logits = self.model(inputs_embeds=torch.cat(segments)[None], attention_mask=mask[None, None], logits_to_keep=t_len+1).logits[0, :-1]
+            s_output_logits = self.model(inputs_embeds=torch.cat(segments)[None], attention_mask=mask[None, None], logits_to_keep=len(answer)+1).logits[0, :-1]
             
             loss = F.kl_div(F.log_softmax(s_output_logits, dim=1), F.log_softmax(t_output_logits, dim=1), log_target=True, reduction="batchmean")
             wandb.log({"train-loss": loss.item()})
