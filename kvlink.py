@@ -37,18 +37,17 @@ class KVLink():
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
             score = 0
             for valid_example in valid_examples:
-                answer_len = example["answer"].shape[0]
-                segments = [*[torch.cat((doc, self.link_ids[i, :])), example["prefix"] for i, doc in enumerate(example["docs"])], torch.cat((example["suffix"], example["answer"]))]
-                prompt = torch.cat(segments)
-                mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in segments])
-                idx = example["prefix"].shape[0]
-                for doc in example["docs"]: 
-                    mask[idx+doc.shape[0]:idx+doc.shape[0]+self.num_link_tokens, :idx+doc.shape[0]]=1
-                    idx += doc.shape[0] + self.num_link_tokens
-                mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
+                docs = valid_example["docs"]
+                mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in docs])
                 with torch.autocast(device_type=self.device, dtype=self.compute_dtype): 
+                    cache = self.model(input_ids=torch.cat(docs)[None], attention_mask=mask[None, None]).past_key_values
+                    segs = [*[self.link_ids[i, :] for i in range(len(docs))], valid_example["prefix"], valid_example["suffix"]]
+                    prompt = torch.cat(segs)
+                    mask = torch.zeros((len(prompt), len(prompt)+len(docs)), device=self.device, dtype=torch.bool)
+                    for i in range(len(docs)):
+                        docs[:self.num]
                     output_logits = self.model(input_ids=prompt[None], attention_mask=mask[None, None], logits_to_keep=answer_len+1).logits[0, :-1]
-                    loss = F.cross_entropy(output_logits, prompt[-answer_len:])
+                    
                 wandb.log({"train-loss": loss.item()})
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
