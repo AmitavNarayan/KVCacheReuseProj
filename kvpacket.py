@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from datasets import Dataset
 from hotpot_evaluate_v1 import f1_score
 from vllm import LLM, SamplingParams
-from datasets import load_from_disk, load_dataset
+from datasets import load_from_disk 
 
 class Packetize(torch.nn.Module):
     def __init__(self, device: str | torch.device, d_model: int, header_len: int, mean: float = 0, stdev: float = 0.02):
@@ -52,9 +52,9 @@ class KVPacket():
             for valid_example in valid_examples:
                 packetized_docs = [self.packetize(write_embed(doc)) for doc in valid_example["docs"]]
                 doc_mask = torch.block_diag(*[torch.ones((pd.shape[0], pd.shape[0]), dtype=torch.bool, device=self.device).tril() for pd in packetized_docs])[None, None]
-                cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
                 pos_ids = valid_example["prefix"].shape[0] + torch.arange(doc_mask.shape[-1], device=self.device)
                 doc_cache = write_model(inputs_embeds = torch.cat(packetized_docs)[None], attention_mask=doc_mask, position_ids=pos_ids[None]).past_key_values
+                cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
                 for i, layer in enumerate(doc_cache.layers): cache.update(layer.keys, layer.values, i)
                 output_tokens = []
                 output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
@@ -71,7 +71,7 @@ class KVPacket():
         self.model.train()
         return score
  
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, teacher_batch_size: int=32, step_size: int=32, valid_freq:float=0.01, valid_size: int=100):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, valid_size: int=100):
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
@@ -87,7 +87,7 @@ class KVPacket():
 
             segments = [embed(example["prefix"]), *[self.packetize(embed(doc)) for doc in example["docs"]], torch.cat((embed(example["suffix"]), t_output_embeds))]
             mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in segments])
-            mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
+            mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = True
             s_output_logits = self.model(inputs_embeds=torch.cat(segments)[None], attention_mask=mask[None, None], logits_to_keep=len(answer)+1).logits[0, :-1]
             
             loss = F.kl_div(F.log_softmax(s_output_logits, dim=1), F.log_softmax(t_output_logits, dim=1), log_target=True, reduction="batchmean")
@@ -106,4 +106,4 @@ class KVPacket():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    KVPacket().train(ds["hotpot_train"], ds["hotpot_valid"])
+    KVPacket.train(ds["hotpot_train"], ds["hotpot_valid"])
