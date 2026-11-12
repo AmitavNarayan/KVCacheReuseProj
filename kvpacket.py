@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from datasets import Dataset
 from hotpot_evaluate_v1 import f1_score
 from vllm import LLM, SamplingParams
+from datasets import load_from_disk, load_dataset
 
 class Packetize(torch.nn.Module):
     def __init__(self, device: str | torch.device, d_model: int, header_len: int, mean: float = 0, stdev: float = 0.02):
@@ -102,3 +103,7 @@ class KVPacket():
                 wandb.log({"alt-f1-score": alt_f1})
                 
         wandb.finish()
+
+if __name__=="__main__":
+    ds = load_from_disk("hotpot").with_format("torch", device="cuda")
+    KVPacket().train(ds["hotpot_train"], ds["hotpot_valid"])
