@@ -37,23 +37,19 @@ class KVLink():
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
             score = 0
             for valid_example in valid_examples:
-                docs = valid_example["docs"]
-                doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), dtype=torch.bool, device=self.device).tril() for d in docs])[None, None]
-                doc_cache = write_model(input_ids = torch.cat(docs)[None], attention_mask=doc_mask).past_key_values
-                cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
-                idx = valid_example["prefix"].shape[0]
-                for doc in valid_example["docs"]: 
-                    doc_mask[idx+doc.shape[0]:idx+doc.shape[0]+self.num_link_tokens, :idx+doc.shape[0]]=1
+                answer_len = example["answer"].shape[0]
+                segments = [*[torch.cat((doc, self.link_ids[i, :])), example["prefix"] for i, doc in enumerate(example["docs"])], torch.cat((example["suffix"], example["answer"]))]
+                prompt = torch.cat(segments)
+                mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in segments])
+                idx = example["prefix"].shape[0]
+                for doc in example["docs"]: 
+                    mask[idx+doc.shape[0]:idx+doc.shape[0]+self.num_link_tokens, :idx+doc.shape[0]]=1
                     idx += doc.shape[0] + self.num_link_tokens
-                doc_mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
-                for idx, layer in enumerate(doc_cache.layers): cache.update(layer.keys, layer.values, idx)
-                output_tokens = []
-                output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
-                for _ in range(self.max_new_tokens):
-                    output_tokens.append(output.logits[0, 0].argmax())
-                    if output_tokens[-1]==self.tokenizer.eos_token_id:
-                        break
-                    output = self.model(input_ids = output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, logits_to_keep=1)
+                mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = 1
+                with torch.autocast(device_type=self.device, dtype=self.compute_dtype): 
+                    output_logits = self.model(input_ids=prompt[None], attention_mask=mask[None, None], logits_to_keep=answer_len+1).logits[0, :-1]
+                    loss = F.cross_entropy(output_logits, prompt[-answer_len:])
+                wandb.log({"train-loss": loss.item()})
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
                 score += f1_score(output_text, answer_text)[0] 
