@@ -45,7 +45,8 @@ class KVLink():
                     prompt = torch.cat(segs)
                     mask = torch.zeros((len(prompt), len(prompt)+len(docs)), device=self.device, dtype=torch.bool)
                     for i in range(len(docs)):
-                        docs[:self.num]
+                        docs[i*self.num_link_tokens:(i+1)*self.num_link_tokens] = torch.ones((self.num_link_tokens, self._num_link_tokens), device=self.device, dtype=torch.bool)
+                         
                     output_logits = self.model(input_ids=prompt[None], attention_mask=mask[None, None], logits_to_keep=answer_len+1).logits[0, :-1]
                     
                 wandb.log({"train-loss": loss.item()})
