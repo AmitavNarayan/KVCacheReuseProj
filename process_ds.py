@@ -43,4 +43,4 @@ class ProcessDS:
 
 if __name__=="__main__":
     temp = load_dataset("hotpotqa/hotpot_qa", "distractor")
-    ProcessDS().make_ds({"hotpot_train": temp["train"], "hotpot_valid": temp["valid"]})
+    ProcessDS().make_ds({"hotpot_train": temp["train"], "hotpot_valid": temp["validation"]})
