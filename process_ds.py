@@ -1,6 +1,7 @@
 
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, load_dataset
 from transformers import AutoTokenizer
+
 
 
 class ProcessDS:
@@ -38,3 +39,8 @@ class ProcessDS:
         for ds_name in input_datasets:
             datasets[ds_name] = input_datasets[ds_name].map(self.get_tokens, fn_kwargs={"ds_name": ds_name}, num_proc=num_cpus, remove_columns=input_datasets[ds_name].column_names).with_format("torch", device="cuda")
         DatasetDict(datasets).save_to_disk("hotpot")
+
+
+if __name__=="__main__":
+    temp = load_dataset("hotpot/hotpot_qa", "distractor")
+    ProcessDS().make_ds({"hotpot_train": temp["train"], "hotpot_valid": temp["valid"]})
