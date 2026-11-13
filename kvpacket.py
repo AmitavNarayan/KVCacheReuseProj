@@ -97,6 +97,7 @@ class KVPacket():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
             if step % int(valid_freq * len(train_dataset)) == 0:
+                self.model.save_pretrained("/scratch/an4245/kvlink_model")
                 f1 = self.validate(valid_examples)
                 wandb.log({"f1-score": f1})
                 alt_f1 = self.validate(valid_examples, is_alt=True)

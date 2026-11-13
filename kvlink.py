@@ -11,14 +11,14 @@ class KVLink():
                  alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", 
                  tokenizer_path: str = "Qwen2.5-1.5B-Instruct", 
                  model_dtype: torch.dtype = torch.float32, 
-                 device: torch.device | str = "cuda", 
+                 alt_model_dtype: torch.dtype = torch.bfloat16,
+                 device: torch.device | str = "cuda",
                  lr: float=5e-6):
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
-        self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
+        self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=alt_model_dtype).to(self.device)
+        self.alt_model.requires_grad_(False)
         self.model.gradient_checkpointing_enable()
-        self.model.config.use_cache = True
-        self.alt_model.config.use_cache = True
         self.max_new_tokens = max_new_tokens
 
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
@@ -32,31 +32,30 @@ class KVLink():
         
     def validate(self, valid_examples: Dataset, is_alt: bool = False):
         write_model = self.alt_model if is_alt else self.model
-        self.model.eval()  
-        self.alt_model.eval()  
+        self.model.eval()
+        score = 0
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
-            score = 0
             for valid_example in valid_examples:
-                docs = valid_example["docs"]
-                mask = torch.block_diag(*[torch.ones((s.shape[0], s.shape[0]), device=self.device, dtype=torch.bool).tril() for s in docs])
-                with torch.autocast(device_type=self.device, dtype=self.compute_dtype): 
-                    cache = self.write_model(input_ids=torch.cat(docs)[None], attention_mask=mask[None, None]).past_key_values
-                    segs = [*[self.link_ids[i, :] for i in range(len(docs))], valid_example["prefix"], valid_example["suffix"]]
-                    prompt = torch.cat(segs)
-                    mask = torch.zeros((len(prompt), len(prompt)+len(docs)), device=self.device, dtype=torch.bool)
-                    for i in range(len(docs)):
-                        docs[i*self.num_link_tokens:(i+1)*self.num_link_tokens] = torch.ones((self.num_link_tokens, self._num_link_tokens), device=self.device, dtype=torch.bool)
-                        
-                    output_logits = self.model(input_ids=prompt[None], attention_mask=mask[None, None], logits_to_keep=answer_len+1).logits[0, :-1]
-                    
-                wandb.log({"train-loss": loss.item()})
+                cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
+                for i, doc in enumerate(valid_example["docs"]):
+                    cache_len = cache.get_seq_length()
+                    doc_mask = torch.cat((torch.zeros((len(doc), cache_len), dtype=torch.bool, device=self.device),
+                                          torch.ones((len(doc), len(doc)), dtype=torch.bool, device=self.device).tril()), dim=1)
+                    write_model(input_ids=doc[None], attention_mask=doc_mask[None, None], past_key_values=cache)
+                    self.model(input_ids=self.link_ids[i][None], past_key_values=cache)
+                output = self.model(input_ids=valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
+                output_tokens = []
+                for _ in range(self.max_new_tokens):
+                    output_tokens.append(output.logits[0, -1].argmax())
+                    if output_tokens[-1] == self.tokenizer.eos_token_id:
+                        break
+                    output = self.model(input_ids=output_tokens[-1].reshape(1, 1), past_key_values=output.past_key_values, logits_to_keep=1)
+
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
-                score += f1_score(output_text, answer_text)[0] 
-
-            score = score / len(valid_examples)
+                score += f1_score(output_text, answer_text)[0]
         self.model.train()
-        return score
+        return score / len(valid_examples)
     
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, valid_size: int=100):
         wandb.init()
@@ -82,6 +81,7 @@ class KVLink():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
             if step % int(valid_freq * len(train_dataset)) == 0:
+                torch.save(self.packetize.state_dict(), "/scratch/an4245/kvpacket_packetize.pt")
                 f1 = self.validate(valid_examples)
                 wandb.log({"f1-score": f1})
                 alt_f1 = self.validate(valid_examples, is_alt=True)
