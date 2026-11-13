@@ -106,4 +106,4 @@ class KVPacket():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    KVPacket.train(ds["hotpot_train"], ds["hotpot_valid"])
+    KVPacket().train(ds["hotpot_train"], ds["hotpot_valid"])
