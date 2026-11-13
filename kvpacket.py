@@ -75,7 +75,7 @@ class KVPacket():
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
-        t_output = self.vllm.generate([{"prompt_token_ids": torch.cat([example["prefix"], *example["docs"], example["suffix"]])} for example in train_dataset.with_format(None)], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
+        t_output = self.vllm.generate([{"prompt_token_ids": torch.cat([example["prefix"], *example["docs"], example["suffix"]]).tolist()} for example in train_dataset], SamplingParams(temperature=0, max_tokens=self.max_new_tokens))
         self.vllm.sleep(level=2)
         t_output_tokens = [torch.tensor(x.outputs[0].token_ids, device=self.device) for x in t_output]
         for step, example in enumerate(train_dataset, start=1):
@@ -90,7 +90,7 @@ class KVPacket():
             mask[-segments[-1].shape[0]:, :-segments[-1].shape[0]] = True
             s_output_logits = self.model(inputs_embeds=torch.cat(segments)[None], attention_mask=mask[None, None], logits_to_keep=len(answer)+1).logits[0, :-1]
             
-            loss = F.kl_div(F.log_softmax(s_output_logits, dim=1), F.log_softmax(t_output_logits, dim=1), log_target=True, reduction="batchmean")
+            loss = F.kl_div(F.log_softmax(s_output_logits.float(), dim=1), F.log_softmax(t_output_logits.float(), dim=1), log_target=True, reduction="batchmean")
             wandb.log({"train-loss": loss.item()})
             (loss / step_size).backward()
             if step % step_size == 0:
