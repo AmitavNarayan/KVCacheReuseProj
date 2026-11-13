@@ -57,7 +57,7 @@ class KVLink():
         self.model.train()
         return score / len(valid_examples)
     
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, valid_size: int=100):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, checkpt_freq: float = 0.1, valid_size: int=100):
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
@@ -81,11 +81,13 @@ class KVLink():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
             if step % int(valid_freq * len(train_dataset)) == 0:
-                self.model.save_pretrained("/scratch/an4245/kvlink_model")
                 f1 = self.validate(valid_examples)
                 wandb.log({"f1-score": f1})
                 alt_f1 = self.validate(valid_examples, is_alt=True)
                 wandb.log({"alt-f1-score": alt_f1})
+            if step % int(checkpt_freq * len(train_dataset)) == 0:
+                self.model.save_pretrained("/scratch/an4245/kvlink_model")
+                self.tokenizer.save_pretrained("/scratch/an4245/kvlink_model")
                 
         wandb.finish()
 
