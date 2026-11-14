@@ -41,8 +41,8 @@ class Translate():
             tokens = example["input_ids"][None]
             x = torch.stack(self.model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
             y = torch.stack(self.alt_model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
+            x, y = x[:, 1:, :], y[:, 1:, :]
             x = torch.cat((x, torch.ones_like(x[:, :, :1])), dim=2)
-            
         return x,y
     
     def train(self, train_dataset: Dataset, valid_ds: Dataset, reg_param: float=1e-6):
