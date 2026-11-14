@@ -2,7 +2,7 @@ import wandb
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM
-from datasets import Dataset
+from datasets import Dataset, load_from_disk
 import einx
 import math
 
@@ -21,14 +21,16 @@ class Translator(torch.nn.Module):
         return y
 
 class Translate():
-    def __init__(self, model: AutoModelForCausalLM, alt_model: AutoModelForCausalLM):
-        self.model = model
-        self.alt_model = alt_model
+    def __init__(self, model_path: str = "Qwen2.5-1.5B-Instruct", 
+                 alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", model_dtype: torch.dtype = torch.bfloat16, device: str = "cuda"):
+        self.device = device
+        self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
+        self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
         self.layers = self.model.config.num_hidden_layers + 1
         self.model.eval()
         self.alt_model.eval()
         self.device = self.model.device
-        self.translator = Translator(self.layers, model.config.hidden_size, alt_model.config.hidden_size, self.device, dtype=torch.float32)
+        self.translator = Translator(self.layers, self.model.config.hidden_size, self.alt_model.config.hidden_size, self.device, dtype=torch.float32)
         self.optim = torch.optim.AdamW(self.translator.parameters())
 
     def get_x_y(self, example: dict):
@@ -72,5 +74,8 @@ class Translate():
             step += 1
         wandb.finish()
 
-
+if __name__=="__main__":
+    ds = load_from_disk("hotpot").with_format("torch", device="cuda")
+    Translate.train(ds["hotpot_train"], ds["hotpot_valid"])
+    
                  

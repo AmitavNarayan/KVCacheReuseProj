@@ -34,16 +34,9 @@ class KVLink():
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()
         score = 0
-        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
+        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype), torch.device(self.device):
             for valid_example in valid_examples:
-                cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
-                for i, doc in enumerate(valid_example["docs"]):
-                    cache_len = cache.get_seq_length()
-                    doc_mask = torch.cat((torch.zeros((len(doc), cache_len), dtype=torch.bool, device=self.device),
-                                          torch.ones((len(doc), len(doc)), dtype=torch.bool, device=self.device).tril()), dim=1)
-                    write_model(input_ids=doc[None], attention_mask=doc_mask[None, None], past_key_values=cache)
-                    self.model(input_ids=self.link_ids[i][None], past_key_values=cache)
-                output = self.model(input_ids=valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
+                
                 output_tokens = []
                 for _ in range(self.max_new_tokens):
                     output_tokens.append(output.logits[0, -1].argmax())
