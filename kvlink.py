@@ -36,13 +36,30 @@ class KVLink():
         score = 0
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype), torch.device(self.device):
             for valid_example in valid_examples:
-                doc_cache = self.write_model()
+                p = valid_example["prefix"].shape[0]
+                s = valid_example["suffix"].shape[0]
+                cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
+                docs = valid_example["docs"]
+                doc_ids = torch.tensor([], dtype=torch.long)
+                ls_ids = torch.tensor([], dtype=torch.long)
+                offset = p
+                for doc in docs: 
+                    ls_ids = torch.cat((ls_ids, offset + torch.arange(doc.shape[0], doc.shape[0]+self.num_link_tokens)), dim=0)
+                    doc_ids = torch.cat((doc_ids, offset + torch.arange(doc.shape[0])), dim=0)
+                    offset += self.num_link_tokens + doc.shape[0]
+                ls_ids = torch.cat((ls_ids, offset+torch.arange(s)))[None]
+                total_doc_len = sum(doc.shape[0] for doc in docs)
+                doc_mask = torch.cat((torch.zeros((total_doc_len, p)), torch.block_diag(*[torch.ones(d.shape[0], d.shape[0]).tril() for d in docs])), dim=1).bool()[None, None]
+                write_model(input_ids=torch.cat(docs)[None], attention_mask=doc_mask, position_ids=doc_ids[None], past_key_values=cache)
+                ls = torch.cat([*[self.link_ids[i, :] for i in range(len(docs))], valid_example["suffix"]])[None]
+                ls_mask = (torch.cat((torch.arange(p), doc_ids, ls_ids[0]))[None] <= ls_ids[0][:, None])[None, None]
                 output_tokens = []
                 for _ in range(self.max_new_tokens):
+                    output = self.model(input_ids=ls, attention_mask = ls_mask, past_key_values=cache, position_ids=ls_ids, logits_to_keep=1)
                     output_tokens.append(output.logits[0, -1].argmax())
                     if output_tokens[-1] == self.tokenizer.eos_token_id:
                         break
-                    output = self.model(input_ids=output_tokens[-1].reshape(1, 1), past_key_values=output.past_key_values, logits_to_keep=1)
+                    ls, ls_mask, ls_ids = output_tokens[-1][None, None], None, (ls_ids[:, -1]+1)[None]
 
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
