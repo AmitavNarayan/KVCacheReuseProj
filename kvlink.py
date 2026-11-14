@@ -36,7 +36,7 @@ class KVLink():
         score = 0
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype), torch.device(self.device):
             for valid_example in valid_examples:
-                
+                doc_cache = self.write_model()
                 output_tokens = []
                 for _ in range(self.max_new_tokens):
                     output_tokens.append(output.logits[0, -1].argmax())

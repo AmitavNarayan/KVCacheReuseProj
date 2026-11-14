@@ -38,7 +38,7 @@ class Translate():
             prompt = torch.cat((example["prefix"], torch.cat(list(example["docs"])), example["suffix"], example["answer"])).unsqueeze(0)
             x = torch.stack(self.model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
             y = torch.stack(self.alt_model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
-        return x, y
+        return x[:, 1:, :], y[:, 1:, :]
     
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 64, valid_size: int = 100, valid_freq: float = 0.01):
         wandb.init()
