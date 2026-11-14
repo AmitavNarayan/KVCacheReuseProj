@@ -42,6 +42,7 @@ class Translate():
             x = torch.stack(self.model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
             y = torch.stack(self.alt_model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
             x = torch.cat((x, torch.ones_like(x[:, :, :1])), dim=2)
+            x, y = x[:, 1:, :], y[:, 1:, :]
         return x,y
     
     def train(self, train_dataset: Dataset, valid_ds: Dataset, reg_param: float=1e-6):
@@ -75,7 +76,7 @@ class Translate():
         return unexplained_var
 
 if __name__=="__main__": 
-    ds = load_from_disk("/scratch/an4245/webtext").with_format("torch", device="cuda")
+    ds = 4
     print(Translate().train(ds.select(range(400)), ds.select(range(400,500))))
 
 
