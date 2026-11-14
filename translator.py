@@ -22,7 +22,7 @@ class Translator(torch.nn.Module):
 
 class Translate():
     def __init__(self, model_path: str = "Qwen2.5-1.5B-Instruct", 
-                 alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", model_dtype: torch.dtype = torch.bfloat16, device: str = "cuda"):
+                 alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", model_dtype: torch.dtype = torch.bfloat16, compute_dtype: torch.dtype = torch.float64, device: str = "cuda"):
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
         self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
@@ -30,53 +30,54 @@ class Translate():
         self.model.eval()
         self.alt_model.eval()
         self.device = self.model.device
-        self.translator = Translator(self.layers, self.model.config.hidden_size, self.alt_model.config.hidden_size, self.device, dtype=torch.float32)
-        self.optim = torch.optim.AdamW(self.translator.parameters())
+        self.d = self.model.config.hidden_size
+        self.compute_dtype = compute_dtype
+        # self.translator = Translator(self.layers, self.model.config.hidden_size, self.alt_model.config.hidden_size, self.device, dtype=torch.float32)
+        # self.optim = torch.optim.AdamW(self.translator.parameters())
+       
 
     def get_x_y(self, example: dict):
         with torch.no_grad():
-            prompt = torch.cat((example["prefix"], torch.cat(list(example["docs"])), example["suffix"], example["answer"])).unsqueeze(0)
-            x = torch.stack(self.model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
-            y = torch.stack(self.alt_model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
+            tokens = example["input_ids"][None]
+            x = torch.stack(self.model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
+            y = torch.stack(self.alt_model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
+            x = torch.cat((x, torch.ones_like(x[:, :, :1])), dim=2)
         return x,y
     
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 64, valid_size: int = 100, valid_freq: float = 0.01):
-        wandb.init()
-        self.translator.train()
-        valid_ds = valid_dataset.select(range(valid_size))
-        y_mean = torch.zeros((self.layers, self.alt_model.config.hidden_size), device=self.device, dtype=torch.float64)
-        num_tokens = 0
-        for example in valid_ds: 
-            y = self.get_x_y(example)[1]
-            num_tokens += y.shape[1]
-            y_mean += y.sum(dim=1)
-        y_mean /= num_tokens
-        loss = 0
-        step = 1
-        for example in train_dataset:
-            x, y = self.get_x_y(example)
-            loss = ((self.translator(x) - y) ** 2).sum() / step_size
-            loss.backward()
-            if step % step_size == 0:
-                self.optim.step()
-                self.optim.zero_grad()
-            if step % int(len(train_dataset) * valid_freq) == 0:
-                with torch.no_grad():
-                    pred_error_sum = torch.zeros((self.layers), device=self.device, dtype=torch.float64)
-                    standard_error_sum = torch.zeros((self.layers), device=self.device, dtype=torch.float64)
-                    for example in valid_ds:
-                        x,y = self.get_x_y(example)
-                        pred_error_sum += ((self.translator(x) - y) ** 2).sum(dim=(1,2))
-                        standard_error_sum += ((y_mean.unsqueeze(1) - y) ** 2).sum(dim=(1,2))
-                    unexplained_var = pred_error_sum / standard_error_sum
-                    valid_loss = {f"layer-{l}-loss": unexplained_var[l].item() for l in range(self.layers)}
-                    wandb.log(valid_loss)
-            step += 1
-        wandb.finish()
+    def train(self, train_dataset: Dataset, valid_ds: Dataset, reg_param: float=1e-6):
+        torch.set_default_dtype(self.compute_dtype)
+        with torch.device(self.device):
+            y_mean = torch.zeros((self.layers, self.d))
+            num_tokens = 0
+            for example in valid_ds: 
+                y = self.get_x_y(example)[1]
+                num_tokens += y.shape[1]
+                y_mean += y.sum(dim=1)
+            y_mean /= num_tokens
+            xtx = torch.zeros((self.layers, self.d+1, self.d+1))
+            xty = torch.zeros((self.layers, self.d+1, self.d))
+            for example in train_dataset:
+                x, y = self.get_x_y(example)
+                xtx += (x.transpose(-1,-2) @ x)
+                xty += (x.transpose(-1,-2) @ y)
+            reg = reg_param * xtx.diagonal(dim2=-2, dim1=-1)
+            reg[:, -1] = 0
+            xtx += torch.diag_embed(reg)
+            w = torch.linalg.solve(xtx, xty)
+            pred_error_sum = torch.zeros((self.layers))
+            standard_error_sum = torch.zeros((self.layers))
+            for example in valid_ds:
+                x,y = self.get_x_y(example)
+                pred_error_sum += ((x@w - y) ** 2).sum(dim=(1,2))
+                standard_error_sum += ((y_mean.unsqueeze(1) - y) ** 2).sum(dim=(1,2))
+            unexplained_var = pred_error_sum / standard_error_sum
+            torch.save(w, "/scratch/an4245/linear_translator_w.pt")
+        return unexplained_var
 
 if __name__=="__main__": 
-    ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    Translate().train(ds["hotpot_train"], ds["hotpot_valid"])
-    torch.save(self.Translate.translator.state_dict(), "/scratch/an4245/translator.pt")
-    
+    ds = load_from_disk("/scratch/an4245/webtext").with_format("torch", device="cuda")
+    print(Translate().train(ds.select(range(400)), ds.select(range(400,500))))
+
+
+   
                  
