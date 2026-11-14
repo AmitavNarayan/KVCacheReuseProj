@@ -38,7 +38,7 @@ class Translate():
             prompt = torch.cat((example["prefix"], torch.cat(list(example["docs"])), example["suffix"], example["answer"])).unsqueeze(0)
             x = torch.stack(self.model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
             y = torch.stack(self.alt_model(prompt, output_hidden_states=True).hidden_states).squeeze(1).to(self.translator.dtype)
-        return x[:, 1:, :], y[:, 1:, :]
+        return x,y
     
     def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 64, valid_size: int = 100, valid_freq: float = 0.01):
         wandb.init()
@@ -74,8 +74,9 @@ class Translate():
             step += 1
         wandb.finish()
 
-if __name__=="__main__":
+if __name__=="__main__": 
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
     Translate().train(ds["hotpot_train"], ds["hotpot_valid"])
+    torch.save(self.Translate.translator.state_dict(), "/scratch/an4245/translator.pt")
     
                  
