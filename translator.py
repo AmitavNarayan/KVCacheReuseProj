@@ -76,6 +76,6 @@ class Translate():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    Translate.train(ds["hotpot_train"], ds["hotpot_valid"])
+    Translate().train(ds["hotpot_train"], ds["hotpot_valid"])
     
                  
