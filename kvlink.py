@@ -4,7 +4,6 @@ import wandb
 from hotpot_evaluate_v1 import f1_score
 from datasets import Dataset, load_from_disk
 import torch.nn.functional as F 
-from translator import Translate
 
 
 class KVLink():
@@ -21,9 +20,7 @@ class KVLink():
         self.alt_model.requires_grad_(False)
         self.model.gradient_checkpointing_enable()
         self.max_new_tokens = max_new_tokens
-        self.translate = Translate()
         self.layers = self.model.config.num_hidden_layers
-
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.link_tokens = [f"<link{a+1}_{b+1}>" for a in range(max_num_docs) for b in range(num_link_tokens)]
         self.num_link_tokens = num_link_tokens
@@ -52,12 +49,9 @@ class KVLink():
                 ls_ids = torch.cat((ls_ids, offset+torch.arange(s)))[None]
                 doc_mask = torch.block_diag(*[torch.ones(d.shape[0], d.shape[0]).tril() for d in docs]).bool()[None, None]
                 doc_cache = write_model(input_ids=torch.cat(docs)[None], attention_mask=doc_mask, position_ids=doc_ids[None]).past_key_values
-                kv = [torch.stack([getattr(doc_cache.layers[l], x) for l in range(self.layers)]).squeeze(1) for x in ["keys", "values"]]
-                if is_alt:
-                    kv = self.translate.forward(kv, doc_ids)
                 cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
-                for l in range(self.layers):
-                    cache.update(kv[0][l][None], kv[1][l][None], l)
+                for l, layer in enumerate(doc_cache.layers):
+                    cache.update(layer.keys, layer.values, l)
                 ls = torch.cat([*[self.link_ids[i, :] for i in range(len(docs))], valid_example["suffix"]])[None]
                 ls_mask = (torch.cat((torch.arange(p), doc_ids, ls_ids[0]))[None] <= ls_ids[0][:, None])[None, None]
                 output_tokens = []
