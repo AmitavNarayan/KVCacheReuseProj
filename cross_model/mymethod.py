@@ -38,7 +38,8 @@ class KVPacket():
         self.alt_model.config.use_cache = True
         self.max_new_tokens = max_new_tokens
         self.model.requires_grad_(False)
-        self.packetize = Packetize(self.device, self.model.config.hidden_size, header_len)
+        self.header_len = header_len
+        self.packetize = Packetize(self.device, self.model.config.hidden_size, self.header_len)
         self.optimizer = torch.optim.AdamW(self.packetize.parameters(), lr=lr)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.vllm = LLM(model_path, dtype=model_dtype, gpu_memory_utilization=0.3, enable_sleep_mode=True)
@@ -59,7 +60,10 @@ class KVPacket():
                 doc_cache = write_model(inputs_embeds = torch.cat(packetized_docs)[None], attention_mask=doc_mask, position_ids=pos_ids[None]).past_key_values 
                 kv = [torch.stack([getattr(doc_cache.layers[l],x) for l in range(self.layers)]).squeeze(1) for x in ["keys", "values"]]
                 if is_alt:
-                    kv = torch.cat((self.translate.forward(kv_no_header, pos_ids)
+                    h_mask = torch.cat([torch.arange(pd.shape[0], device=self.device) >= self.header_len for pd in packetized_docs])
+                    kv_no_header = self.translate.forward([x[:, :, h_mask] for x in kv], pos_ids[h_mask])
+                    for i in range(2): kv[i][:, :, h_mask] = kv_no_header[i]
+    
                 cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
                 for l in range(self.layers):
                     cache.update(kv[0][l][None], kv[1][l][None], l)

@@ -68,7 +68,7 @@ class KVLink():
         self.model.train()
         return score / len(valid_examples)
     
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, checkpt_freq: float = 0.1, valid_size: int=100):
+    def run(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, checkpt_freq: float = 0.1, valid_size: int=100):
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
@@ -104,5 +104,5 @@ class KVLink():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    KVLink().train(ds["hotpot_train"], ds["hotpot_valid"])
+    KVLink().run(ds["hotpot_train"], ds["hotpot_valid"])
 
