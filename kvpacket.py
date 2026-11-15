@@ -8,6 +8,7 @@ from datasets import Dataset
 from hotpot_evaluate_v1 import f1_score
 from vllm import LLM, SamplingParams
 from datasets import load_from_disk 
+from translator import Translate
 
 class Packetize(torch.nn.Module):
     def __init__(self, device: str | torch.device, d_model: int, header_len: int, mean: float = 0, stdev: float = 0.02):
@@ -32,6 +33,7 @@ class KVPacket():
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
         self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
+        self.layers = self.model.config.num_hidden_layers
         self.model.config.use_cache = True
         self.alt_model.config.use_cache = True
         self.max_new_tokens = max_new_tokens
@@ -40,24 +42,27 @@ class KVPacket():
         self.optimizer = torch.optim.AdamW(self.packetize.parameters(), lr=lr)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.vllm = LLM(model_path, dtype=model_dtype, gpu_memory_utilization=0.3, enable_sleep_mode=True)
-       
+        self.translate = Translate()
 
     def validate(self, valid_examples: Dataset, is_alt: bool = False):
         write_model = self.alt_model if is_alt else self.model
         write_embed = write_model.get_input_embeddings()
         self.model.eval()  
         self.alt_model.eval()  
+        
         with torch.no_grad():
             score = 0
             for valid_example in valid_examples:
                 packetized_docs = [self.packetize(write_embed(doc)) for doc in valid_example["docs"]]
                 doc_mask = torch.block_diag(*[torch.ones((pd.shape[0], pd.shape[0]), dtype=torch.bool, device=self.device).tril() for pd in packetized_docs])[None, None]
                 pos_ids = valid_example["prefix"].shape[0] + torch.arange(doc_mask.shape[-1], device=self.device)
-                doc_cache = write_model(inputs_embeds = torch.cat(packetized_docs)[None], attention_mask=doc_mask, position_ids=pos_ids[None]).past_key_values
+                doc_cache = write_model(inputs_embeds = torch.cat(packetized_docs)[None], attention_mask=doc_mask, position_ids=pos_ids[None]).past_key_values 
+                kv = [torch.stack([getattr(doc_cache.layers[l],x) for l in range(self.layers)]).squeeze(1) for x in ["keys", "values"]]
+                if is_alt:
+                    kv = self.translate.forward(kv, pos_ids)
                 cache = self.model(input_ids = valid_example["prefix"][None]).past_key_values
-                for i, layer in enumerate(doc_cache.layers): 
-                    
-                    cache.update(layer.keys, layer.values, i)
+                for l in range(self.layers):
+                    cache.update(kv[0][l][None], kv[1][l][None], l)
                 output_tokens = []
                 output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
                 for _ in range(self.max_new_tokens):
@@ -73,7 +78,7 @@ class KVPacket():
         self.model.train()
         return score
  
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, valid_size: int=100, w: torch.Tensor):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int=32, valid_freq:float=0.01, valid_size: int=100):
         wandb.init()
         self.model.train()
         valid_examples = valid_dataset.select(range(valid_size))
@@ -110,4 +115,3 @@ class KVPacket():
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
     KVPacket().train(ds["hotpot_train"], ds["hotpot_valid"])
-    w =  load_from_disk("/scratch/an4245/linear_translator_w.pt").with_format("torch", device="cuda")
