@@ -70,7 +70,7 @@ class Translate():
     def forward(self, k: torch.Tensor, v: torch.Tensor):
         k, v = k.to(self.compute_dtype), v.to(self.compute_dtype)
         k, v = [einx.id("l n t d, 1 -> l t ((n d) + 1)", x, torch.ones(1, device=k.device, dtype=self.compute_dtype)) for x in [k,v]]
-        return [einx.dot("l t y, l h y e -> l h t e", x[0], x[1]) for x in [[k, self.w_k], [v, self.w_v]]]
+        return [einx.dot("l t y, l h y e -> l h t e", x[0], x[1]).to(self.model.dtype) for x in [[k, self.w_k], [v, self.w_v]]]
         
 
 if __name__=="__main__": 
