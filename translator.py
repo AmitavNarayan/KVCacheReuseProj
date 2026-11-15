@@ -35,7 +35,7 @@ class Translate():
         with torch.device("meta"):
             m = AutoModelForCausalLM.from_config(config)
         self.rope = sys.modules[type(m).__module__].apply_rotary_pos_emb
-        self.rotary_emb = type(m.model.rotary_emb)(config, device=self.device)
+        self.rotary_emb = type(m.model.rotary_emb)(config).to(self.device)
         if build_mode:
             self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=self.dtype).to(self.device)
             self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=self.dtype).to(self.device)
