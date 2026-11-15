@@ -1,10 +1,11 @@
-import wandb
+
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM
 from datasets import Dataset, load_from_disk
 import einx
 import math
+import sys
 
 class Translator(torch.nn.Module):
     def __init__(self, num_layers: int, d_in: int, d_out: int, device: torch.device, dtype:torch.dtype):
@@ -25,59 +26,56 @@ class Translate():
                  alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", model_dtype: torch.dtype = torch.bfloat16, compute_dtype: torch.dtype = torch.float64, device: str = "cuda"):
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(model_path, dtype=model_dtype).to(self.device)
+        self.rope = sys.modules[type(self.model).__module__].apply_rotary_pos_emb
         self.alt_model = AutoModelForCausalLM.from_pretrained(alt_model_path, dtype=model_dtype).to(self.device)
-        self.layers = self.model.config.num_hidden_layers + 1
+        self.layers = self.model.config.num_hidden_layers 
         self.model.eval()
         self.alt_model.eval()
         self.device = self.model.device
-        self.d = self.model.config.hidden_size
+        self.num_heads = self.model.config.num_key_value_heads
+        self.d = self.num_heads * (self.model.config.hidden_size // self.model.config.num_attention_heads)
+        self.w_k = None 
+        self.w_v = None
         self.compute_dtype = compute_dtype
         # self.translator = Translator(self.layers, self.model.config.hidden_size, self.alt_model.config.hidden_size, self.device, dtype=torch.float32)
         # self.optim = torch.optim.AdamW(self.translator.parameters())
        
-
-    def get_x_y(self, example: dict):
+    def get_kv(self, example: dict):
         with torch.no_grad():
-            tokens = example["input_ids"][None]
-            x = torch.stack(self.model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
-            y = torch.stack(self.alt_model(tokens, output_hidden_states=True).hidden_states).squeeze(1).to(self.compute_dtype)
-            x, y = x[:, 1:, :], y[:, 1:, :]
-            x = torch.cat((x, torch.ones_like(x[:, :, :1])), dim=2)
-        return x,y
+            caches = [m(example["input_ids"][None]).past_key_values.layers for m in (self.alt_model, self.model)]
+            k, v = [[torch.stack([getattr(l, x) for l in c]).squeeze(1).to(dtype=torch.float64) for c in caches] for x in ["keys", "values"]]
+            cos, sin = self.model.model.rotary_emb(k[0], torch.arange(k[0].shape[2])[None])
+            k[0], k[1] = [self.rope(x, x, cos, -sin)[1] for x in [k[0], k[1]]]
+            k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1)) for x in [k[0], v[0]]]
+        return k, v
     
-    def train(self, train_dataset: Dataset, valid_ds: Dataset, reg_param: float=1e-6):
+    def train(self, train_dataset: Dataset, reg_param: float=1e-6):
         torch.set_default_dtype(self.compute_dtype)
         with torch.device(self.device):
-            y_mean = torch.zeros((self.layers, self.d))
-            num_tokens = 0
-            for example in valid_ds: 
-                y = self.get_x_y(example)[1]
-                num_tokens += y.shape[1]
-                y_mean += y.sum(dim=1)
-            y_mean /= num_tokens
-            xtx = torch.zeros((self.layers, self.d+1, self.d+1))
-            xty = torch.zeros((self.layers, self.d+1, self.d))
+            k, v =  [[torch.zeros(self.layers, self.d + 1, self.d + 1), torch.zeros(self.layers, self.num_heads, self.d + 1, self.d // self.num_heads)] for _ in range(2)]
+            runsum = lambda x, ex: [x[0] + ex[0].transpose(-1,-2) @ ex[0], x[1] + ex[0].transpose(-1,-2).unsqueeze(1) @ ex[1]]
             for example in train_dataset:
-                x, y = self.get_x_y(example)
-                xtx += (x.transpose(-1,-2) @ x)
-                xty += (x.transpose(-1,-2) @ y)
-            reg = reg_param * xtx.diagonal(dim2=-2, dim1=-1)
-            reg[:, -1] = 0
-            xtx += torch.diag_embed(reg)
-            w = torch.linalg.solve(xtx, xty)
-            pred_error_sum = torch.zeros((self.layers))
-            standard_error_sum = torch.zeros((self.layers))
-            for example in valid_ds:
-                x,y = self.get_x_y(example)
-                pred_error_sum += ((x@w - y) ** 2).sum(dim=(1,2))
-                standard_error_sum += ((y_mean.unsqueeze(1) - y) ** 2).sum(dim=(1,2))
-            unexplained_var = pred_error_sum / standard_error_sum
-            torch.save(w, "/scratch/an4245/linear_translator_w.pt")
-        return unexplained_var
+                k_ex, v_ex = self.get_kv(example)
+                k = runsum(k, k_ex)
+                v = runsum(v, v_ex)
+            
+            reg_k, reg_v = [reg_param * x.diagonal(dim1=-2, dim2=-1) for x in [k[0],v[0]]]
+            reg_k[:, -1] = 0
+            reg_v[:, -1] = 0
+            k[0], v[0] = k[0] + torch.diag_embed(reg_k), v[0] + torch.diag_embed(reg_v)
+            self.w_k, self.w_v = [torch.linalg.solve(x[0].unsqueeze(1), x[1]) for x in [k,v]]
+            torch.save(self.w_k, "/scratch/an4245/linear_translator_w_k.pt")
+            torch.save(self.w_v, "/scratch/an4245/linear_translator_w_v.pt")
+
+    def forward(self, k: torch.Tensor, v: torch.Tensor):
+        k, v = k.to(self.compute_dtype), v.to(self.compute_dtype)
+        k, v = [einx.id("l n t d, 1 -> l t ((n d) + 1)", x, torch.ones(1, device=k.device, dtype=self.compute_dtype)) for x in [k,v]]
+        return [einx.dot("l t y, l h y e -> l h t e", x[0], x[1]) for x in [[k, self.w_k], [v, self.w_v]]]
+        
 
 if __name__=="__main__": 
     ds = load_from_disk("/scratch/an4245/webtext").with_format("torch", device="cuda")
-    print(Translate().train(ds.select(range(400)), ds.select(range(400,500))))
+    Translate().train(ds.select(range(400)))
 
 
    
