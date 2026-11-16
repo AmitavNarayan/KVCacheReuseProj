@@ -61,7 +61,7 @@ class Translate():
     def get_kv(self, tokens: torch.Tensor):
         with torch.no_grad():
             caches = [m(tokens[None]).past_key_values for m in (self.alt_model, self.model)]
-            k, v = [[torch.stack([getattr(l, x) for l in c]).squeeze(1).to(self.compute_dtype) for c in caches] for x in ["keys", "values"]]
+            k, v = [[torch.stack([getattr(l, x) for l in c.layers]).squeeze(1).to(self.compute_dtype) for c in caches] for x in ["keys", "values"]]
             k_pos_ids = torch.arange(tokens.shape[0], device=self.device)
             k[0], k[1] = self.unrope(k[0], k_pos_ids), self.unrope(k[1], k_pos_ids)
             k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1)) for x in [k[0], v[0]]]
