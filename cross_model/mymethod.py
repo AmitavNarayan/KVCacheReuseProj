@@ -49,7 +49,7 @@ class MyMethod():
                 doc_len = offset - p
                 doc_mask = torch.block_diag(*[torch.ones(d.shape[0], d.shape[0]).tril() for d in docs]).bool()[None, None]
                 doc_kv = MyMethod.cache_to_kv(write_model(input_ids=prefix_docs[p:][None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values)
-                if is_alt: doc_kv = self.translate.translate(doc_kv, doc_pos)
+                # if is_alt: doc_kv = self.translate.translate(doc_kv, doc_pos)
                 cache = self.model(input_ids=prefix_docs[:p][None]).past_key_values
                 true_kv = MyMethod.cache_to_kv(self.trunc_model(input_ids=prefix_docs[None]).past_key_values)
                 dist_k, dist_v = [torch.linalg.vector_norm(true_kv[i][1][:, p:].float()-doc_kv[i][1].float(), dim=(0,2)) for i in range(2)]
