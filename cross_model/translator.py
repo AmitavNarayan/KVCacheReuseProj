@@ -69,22 +69,21 @@ class Translate():
     
     def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator_3B"):
         torch.set_default_dtype(self.compute_dtype)
-        with torch.device(self.device):
-            k, v =  [[torch.zeros(self.layers, self.d + 1, self.d + 1), torch.zeros(self.layers, self.num_heads, self.d + 1, self.d // self.num_heads)] for _ in range(2)]
-            runsum = lambda x, ex: [x[0] + ex[0].transpose(-1,-2) @ ex[0], x[1] + ex[0].transpose(-1,-2).unsqueeze(1) @ ex[1]]
-            for example in train_dataset:
-                tokens = example["input_ids"].to(self.device)
-                k_ex, v_ex = self.get_kv(tokens)
-                k = runsum(k, k_ex)
-                v = runsum(v, v_ex)
-            
-            reg_k, reg_v = [reg_param * x.diagonal(dim1=-2, dim2=-1) for x in [k[0],v[0]]]
-            reg_k[:, -1] = 0
-            reg_v[:, -1] = 0
-            k[0], v[0] = k[0] + torch.diag_embed(reg_k), v[0] + torch.diag_embed(reg_v)
-            self.w_k, self.w_v = [torch.linalg.solve(x[0].unsqueeze(1), x[1]) for x in [k,v]]
-            torch.save(self.w_k, f"{save_dir}_w_k.pt")
-            torch.save(self.w_v, f"{save_dir}_w_v.pt")
+        k, v =  [[torch.zeros((self.layers, self.d + 1, self.d + 1), device=self.device), torch.zeros((self.layers, self.num_heads, self.d + 1, self.d // self.num_heads), device=self.device)] for _ in range(2)]
+        runsum = lambda x, ex: [x[0] + ex[0].transpose(-1,-2) @ ex[0], x[1] + ex[0].transpose(-1,-2).unsqueeze(1) @ ex[1]]
+        for example in train_dataset:
+            tokens = example["input_ids"].to(self.device)
+            k_ex, v_ex = self.get_kv(tokens)
+            k = runsum(k, k_ex)
+            v = runsum(v, v_ex)
+        
+        reg_k, reg_v = [reg_param * x.diagonal(dim1=-2, dim2=-1) for x in [k[0],v[0]]]
+        reg_k[:, -1] = 0
+        reg_v[:, -1] = 0
+        k[0], v[0] = k[0] + torch.diag_embed(reg_k), v[0] + torch.diag_embed(reg_v)
+        self.w_k, self.w_v = [torch.linalg.solve(x[0].unsqueeze(1), x[1]) for x in [k,v]]
+        torch.save(self.w_k, f"{save_dir}_w_k.pt")
+        torch.save(self.w_v, f"{save_dir}_w_v.pt")
 
     def translate(self, kv: list[torch.Tensor], k_pos_ids: torch.Tensor):
         kv = [x.to(self.compute_dtype) for x in kv]
