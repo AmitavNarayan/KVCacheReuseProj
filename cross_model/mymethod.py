@@ -4,7 +4,7 @@ import wandb
 from hotpot_evaluate_v1 import f1_score
 from datasets import Dataset, load_from_disk
 from cross_model.translator import Translate
-import sys
+import argparse
 
 
 class MyMethod():
@@ -86,10 +86,12 @@ class MyMethod():
 
 if __name__=="__main__":
     ds = load_from_disk("/scratch/an4245/hotpot").with_format("torch", device="cuda")
-    input_r = float(sys.argv[1])
-    input_valid_size = int(sys.argv[2])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--r", type=float, default=0.15)
+    parser.add_argument("--valid-size", type=float, default=400)
+    args = parser.parse_args()
     MyMethod().run(ds["hotpot_valid"], 
-                r = input_r, valid_size = input_valid_size)
+                r = parser.r, valid_size = parser.valid-size)
     ''' MyMethod(model_path="/scratch/an4245/Qwen2.5-O.5B-Instruct", 
              alt_model_path="/scratch/an4245/Qwen2.5-7B-Instruct", 
              tokenizer_path="/scratch/an4245/Qwen2.5-7B-Instruct").run(ds["hotpot_valid"], 
