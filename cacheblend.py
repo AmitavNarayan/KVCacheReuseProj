@@ -26,7 +26,7 @@ class CacheBlend():
         self.layers = self.model.config.num_hidden_layers
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.compute_dtype = compute_dtype
-        
+
     def validate(self, r: float, valid_examples: Dataset, is_alt: bool = False):
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()
@@ -34,47 +34,48 @@ class CacheBlend():
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype), torch.device(self.device):
             for valid_example in valid_examples:
                 p = valid_example["prefix"].shape[0]
-                s = valid_example["suffix"].shape[0]
                 docs = valid_example["docs"]
                 doc_pos = torch.tensor([], dtype=torch.long)
                 offset = p
+                prefix_docs = torch.cat((valid_example["prefix"], *docs))
                 for doc in docs: 
                     doc_pos = torch.cat((doc_pos, offset + torch.arange(doc.shape[0])), dim=0)
                     offset += doc.shape[0]
+                doc_len = offset - p
                 doc_mask = torch.block_diag(*[torch.ones(d.shape[0], d.shape[0]).tril() for d in docs]).bool()[None, None]
-                doc_cache = write_model(input_ids=torch.cat(docs)[None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values
-                cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
-                for l, layer in enumerate(doc_cache.layers):
-                    cache.update(layer.keys, layer.values, l) 
-                true_cache = self.trunc_model(input_ids=torch.cat((valid_example["prefix"], *docs))[None]).past_key_values
-                dist_k, dist_v = [torch.linalg.vector_norm(getattr(true_cache.layers[1], x)[:, :, p:].float()-getattr(cache.layers[1], x)[:, :, p:].float(), dim=(0,1,3)) for x in ["keys", "values"]]
+                doc_cache = write_model(input_ids=prefix_docs[p:][None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values
+                cache = self.model(input_ids=prefix_docs[:p][None]).past_key_values
+                true_cache = self.trunc_model(input_ids=prefix_docs[None]).past_key_values
+                dist_k, dist_v = [torch.linalg.vector_norm(getattr(true_cache.layers[1], x)[:, :, p:].float()-getattr(doc_cache.layers[1], x)[:, :, :].float(), dim=(0,1,3)) for x in ["keys", "values"]]
                 score = dist_k / dist_k.mean() + dist_v / dist_v.mean()
-                tok_pos = score.topk(int(r * score.shape[0])).indices.sort().values
-
-                
+                tok_pos = score.topk(int(r * doc_len)).indices.sort().values
+                tok_mask = torch.zeros(doc_len, dtype=torch.bool).index_fill(0, tok_pos, True)
+                for l, layer in enumerate(doc_cache.layers):
+                    cache.update(layer.keys[:, :, ~tok_mask], layer.values[:, :, ~tok_mask], l)
+                mask = ((p + tok_pos).unsqueeze(1) >= torch.cat((torch.arange(p), p + torch.arange(doc_len)[~tok_mask], p + tok_pos)))[None, None]
+                if tok_mask.any(): self.model(input_ids=prefix_docs[p:][tok_mask][None], attention_mask=mask, position_ids=(p + tok_pos)[None], past_key_values=cache, logits_to_keep=1)
+                output_tokens = []
+                to_add = valid_example["suffix"][None]
+                to_add_pos = (torch.arange(to_add.shape[1]) + doc_len + p)[None]
                 for _ in range(self.max_new_tokens):
-                    output = self.model(input_ids=ls, attention_mask = ls_mask, past_key_values=cache, position_ids=p+toks, logits_to_keep=1)
-                    output_tokens.append(output.logits[0, -1].argmax())
+                    output_tokens.append(self.model(input_ids = to_add, past_key_values=cache, position_ids=to_add_pos, logits_to_keep=1).logits[0,-1].argmax())
                     if output_tokens[-1] == self.tokenizer.eos_token_id:
                         break
-                    ls, ls_mask, ls_ids = output_tokens[-1][None, None], None, (ls_ids[:, -1]+1)[None]
+                    to_add, to_add_pos = output_tokens[-1][None, None], to_add_pos[:, -1:]+1
 
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
                 f1 += f1_score(output_text, answer_text)[0]
             return f1 / len(valid_examples)
     
-    def run(self, valid_dataset: Dataset, checkpt_freq: float = 0.1, valid_size: int=100, r: float = 0.15):
+    def run(self, valid_dataset: Dataset, valid_size: int=100, r: float = 0.15):
         wandb.init()
         valid_examples = valid_dataset.select(range(valid_size))
-        for step, example in enumerate(valid_examples):
-            f1 = self.validate(valid_examples)
-            wandb.log({"f1-score": f1})
-            alt_f1 = self.validate(valid_examples, is_alt=True)
-            wandb.log({"alt-f1-score": alt_f1})    
+        f1 = self.validate(r, valid_examples)
+        wandb.log({"f1-score": f1})
         wandb.finish()
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    CacheBlend().run(ds["hotpot_train"], ds["hotpot_valid"])
+    CacheBlend().run(ds["hotpot_valid"])
 
