@@ -13,7 +13,7 @@ class MyMethod():
                  model_path: str = "/scratch/an4245/Qwen2.5-7B-Instruct", 
                  alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
                  tokenizer_path: str = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
-                 model_dtype: torch.dtype = torch.float32, 
+                 model_dtype: torch.dtype = torch.bfloat16, 
                  alt_model_dtype: torch.dtype = torch.bfloat16,
                  device: torch.device | str = "cuda",):
         self.device = device
