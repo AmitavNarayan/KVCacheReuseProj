@@ -8,9 +8,9 @@ import sys
 
 
 class MyMethod():
-    def __init__(self, max_num_docs: int=20, max_new_tokens: int = 64, compute_dtype=torch.bfloat16, model_path: str = "scratch/an4245/Qwen2.5-3B-Instruct", 
-                 alt_model_path: str = "scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
-                 tokenizer_path: str = "scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
+    def __init__(self, max_num_docs: int=20, max_new_tokens: int = 64, compute_dtype=torch.bfloat16, model_path: str = "/scratch/an4245/Qwen2.5-3B-Instruct", 
+                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
+                 tokenizer_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
                  model_dtype: torch.dtype = torch.float32, 
                  alt_model_dtype: torch.dtype = torch.bfloat16,
                  device: torch.device | str = "cuda",
@@ -84,7 +84,7 @@ class MyMethod():
         wandb.finish()
 
 if __name__=="__main__":
-    ds = load_from_disk("hotpot").with_format("torch", device="cuda")
+    ds = load_from_disk("/scratch/an4245/hotpot").with_format("torch", device="cuda")
     input_r = float(sys.argv[1])
     input_valid_size = int(sys.argv[2])
     MyMethod().run(ds["hotpot_valid"], r = input_r, valid_size = input_valid_size)
