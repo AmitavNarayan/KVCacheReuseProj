@@ -1,4 +1,4 @@
-## NOT MY CODE
+## NOT MY CODE, TAKEN FROM HOTPOTQA AUTHORS
 
 import sys
 import json
