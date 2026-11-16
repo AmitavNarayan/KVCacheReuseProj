@@ -88,7 +88,7 @@ if __name__=="__main__":
     ds = load_from_disk("/scratch/an4245/hotpot").with_format("torch", device="cuda")
     parser = argparse.ArgumentParser()
     parser.add_argument("--r", type=float, default=0.15)
-    parser.add_argument("--valid_size", type=float, default=400)
+    parser.add_argument("--valid_size", type=int, default=400)
     args = parser.parse_args()
     MyMethod().run(ds["hotpot_valid"], 
                 r = args.r, valid_size = args.valid_size)
