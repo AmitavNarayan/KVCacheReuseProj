@@ -85,6 +85,6 @@ class MyMethod():
 
 if __name__=="__main__":
     ds = load_from_disk("hotpot").with_format("torch", device="cuda")
-    input_r = sys.argv[1]
+    input_r = float(sys.argv[1])
     MyMethod().run(ds["hotpot_valid"], r = input_r)
 
