@@ -99,5 +99,8 @@ if __name__=="__main__":
     num_samples = 500
     ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_samples)).with_format("torch", device="cuda")
     
-    Translate(build_mode=True).train(ds)
+    Translate(build_mode=True, model_path = "/scratch/an4245/Qwen2.5-7B-Instruct", 
+                 alt_model_path = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
+                 tokenizer_path = "/scratch/an4245/Qwen2.5-7B-Instruct", 
+              ).train(ds, save_dir="/scratch/an4245/linear_translator_7B")
     # Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/linear_translator_0.5B_3B")
