@@ -10,9 +10,9 @@ import argparse
 class MyMethod():
     def __init__(self, max_new_tokens: int = 64, 
                  compute_dtype=torch.bfloat16, 
-                 model_path: str = "/scratch/an4245/Qwen2.5-3B-Instruct", 
-                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
-                 tokenizer_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
+                 model_path: str = "/scratch/an4245/Qwen2.5-7B-Instruct", 
+                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
+                 tokenizer_path: str = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
                  model_dtype: torch.dtype = torch.float32, 
                  alt_model_dtype: torch.dtype = torch.bfloat16,
                  device: torch.device | str = "cuda",):

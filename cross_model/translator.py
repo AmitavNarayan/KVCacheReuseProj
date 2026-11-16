@@ -22,12 +22,12 @@ class Translator(torch.nn.Module):
 
 class Translate():
     def __init__(self, build_mode: bool = False,
-                  model_path: str = "/scratch/an4245/Qwen2.5-3B-Instruct", 
-                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
+                  model_path: str = "/scratch/an4245/Qwen2.5-7B-Instruct", 
+                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
                  model_dtype: torch.dtype = torch.bfloat16, 
                  compute_dtype: torch.dtype = torch.float64, 
                  device: str = "cuda",
-                 w_path: str = "/scratch/an4245/linear_translator_3B"):
+                 w_path: str = "/scratch/an4245/linear_translator_7B"):
         self.device = device
         self.dtype = model_dtype
         self.compute_dtype = compute_dtype
@@ -67,7 +67,7 @@ class Translate():
             k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1, device=self.device)) for x in [k[0], v[0]]]
         return k, v
     
-    def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator_3B"):
+    def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator_7B"):
         torch.set_default_dtype(self.compute_dtype)
         k, v =  [[torch.zeros((self.layers, self.d + 1, self.d + 1), device=self.device), torch.zeros((self.layers, self.num_heads, self.d + 1, self.d // self.num_heads), device=self.device)] for _ in range(2)]
         runsum = lambda x, ex: [x[0] + ex[0].transpose(-1,-2) @ ex[0], x[1] + ex[0].transpose(-1,-2).unsqueeze(1) @ ex[1]]
@@ -98,8 +98,4 @@ class Translate():
 if __name__=="__main__":
     num_samples = 500
     ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_samples)).with_format("torch", device="cuda")
-    
-    Translate(build_mode=True, model_path = "/scratch/an4245/Qwen2.5-7B-Instruct", 
-                 alt_model_path = "/scratch/an4245/Qwen2.5-Coder-7B-Instruct", 
-              ).train(ds, save_dir="/scratch/an4245/linear_translator_7B")
-    # Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/linear_translator_0.5B_3B")
+    Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/linear_translator_7B")
