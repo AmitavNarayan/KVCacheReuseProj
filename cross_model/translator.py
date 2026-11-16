@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoConfig, DynamicCache
-from datasets import Dataset, load_from_disk
+from datasets import Dataset
 import einx
 import math
 import sys

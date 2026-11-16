@@ -3,8 +3,7 @@ import torch
 import wandb
 from hotpot_evaluate_v1 import f1_score
 from datasets import Dataset, load_from_disk
-import torch.nn.functional as F 
-from translator import Translate
+from cross_model.translator import Translate
 
 
 class MyMethod():
