@@ -22,8 +22,8 @@ class Translator(torch.nn.Module):
 
 class Translate():
     def __init__(self, build_mode: bool = False,
-                  model_path: str = "/scratch/an4245/Qwen/Qwen2.5-3B-Instruct", 
-                 alt_model_path: str = "/scratch/an4245/Qwen/Qwen2.5-Coder-3B-Instruct", 
+                  model_path: str = "/scratch/an4245/Qwen2.5-3B-Instruct", 
+                 alt_model_path: str = "/scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
                  model_dtype: torch.dtype = torch.bfloat16, 
                  compute_dtype: torch.dtype = torch.float64, 
                  device: str = "cuda",
@@ -97,6 +97,6 @@ class Translate():
         
 
 if __name__=="__main__":
-    ds = load_from_disk("webtext").with_format("torch", device="cuda")
+    ds = load_from_disk("/scratch/an4245/webtext")
     num_samples = 500
-    Translate(build_mode=True).train(ds["webtext"].select(range(num_samples)))
+    Translate(build_mode=True).train(ds.shuffle().select(range(num_samples)).with_format("torch", device="cuda"))

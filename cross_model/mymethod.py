@@ -8,9 +8,9 @@ import sys
 
 
 class MyMethod():
-    def __init__(self, max_num_docs: int=20, max_new_tokens: int = 64, compute_dtype=torch.bfloat16, model_path: str = "Qwen2.5-1.5B-Instruct", 
-                 alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", 
-                 tokenizer_path: str = "Qwen2.5-1.5B-Instruct", 
+    def __init__(self, max_num_docs: int=20, max_new_tokens: int = 64, compute_dtype=torch.bfloat16, model_path: str = "scratch/an4245/Qwen2.5-3B-Instruct", 
+                 alt_model_path: str = "scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
+                 tokenizer_path: str = "scratch/an4245/Qwen2.5-Coder-3B-Instruct", 
                  model_dtype: torch.dtype = torch.float32, 
                  alt_model_dtype: torch.dtype = torch.bfloat16,
                  device: torch.device | str = "cuda",
