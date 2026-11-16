@@ -38,18 +38,14 @@ class MyMethod():
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()
         f1 = 0
-        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype), torch.device(self.device):
+        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
             for valid_example in valid_examples:
                 p = valid_example["prefix"].shape[0]
                 docs = valid_example["docs"]
-                doc_pos = torch.tensor([], dtype=torch.long)
-                offset = p
+                doc_len = sum(d.shape[0] for d in docs)
+                doc_pos = torch.arange(p, p + doc_len, device=self.device)
                 prefix_docs = torch.cat((valid_example["prefix"], *docs))
-                for doc in docs: 
-                    doc_pos = torch.cat((doc_pos, offset + torch.arange(doc.shape[0])), dim=0)
-                    offset += doc.shape[0]
-                doc_len = offset - p
-                doc_mask = torch.block_diag(*[torch.ones(d.shape[0], d.shape[0]).tril() for d in docs]).bool()[None, None]
+                doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
                 doc_kv = MyMethod.cache_to_kv(write_model(input_ids=prefix_docs[p:][None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values)
                 if is_alt: doc_kv = self.translate.translate(doc_kv, doc_pos)
                 cache = self.model(input_ids=prefix_docs[:p][None]).past_key_values
@@ -57,13 +53,13 @@ class MyMethod():
                 dist_k, dist_v = [torch.linalg.vector_norm(true_kv[i][1][:, p:].float()-doc_kv[i][1].float(), dim=(0,2)) for i in range(2)]
                 score = dist_k / dist_k.mean() + dist_v / dist_v.mean()
                 tok_pos = score.topk(int(r * doc_len)).indices.sort().values
-                tok_mask = torch.zeros(doc_len, dtype=torch.bool).index_fill(0, tok_pos, True)
+                tok_mask = torch.zeros(doc_len, dtype=torch.bool, device=self.device).index_fill(0, tok_pos, True)
                 for l in range(self.layers): cache.update(doc_kv[0][l][:, ~tok_mask][None], doc_kv[1][l][:, ~tok_mask][None], l)
-                mask = ((p + tok_pos).unsqueeze(1) >= torch.cat((torch.arange(p), p + torch.arange(doc_len)[~tok_mask], p + tok_pos)))[None, None]
+                mask = ((p + tok_pos).unsqueeze(1) >= torch.cat((torch.arange(p, device=self.device), p + torch.arange(doc_len, device=self.device)[~tok_mask], p + tok_pos)))[None, None]
                 if tok_mask.any(): self.model(input_ids=prefix_docs[p:][tok_mask][None], attention_mask=mask, position_ids=(p + tok_pos)[None], past_key_values=cache, logits_to_keep=1)
                 output_tokens = []
                 to_add = valid_example["suffix"][None]
-                to_add_pos = (torch.arange(to_add.shape[1]) + doc_len + p)[None]
+                to_add_pos = (torch.arange(to_add.shape[1], device=self.device) + doc_len + p)[None]
                 for _ in range(self.max_new_tokens):
                     output_tokens.append(self.model(input_ids = to_add, past_key_values=cache, position_ids=to_add_pos, logits_to_keep=1).logits[0,-1].argmax())
                     if output_tokens[-1] == self.tokenizer.eos_token_id:

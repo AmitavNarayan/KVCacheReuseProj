@@ -64,7 +64,7 @@ class Translate():
             k, v = [[torch.stack([getattr(l, x) for l in c.layers]).squeeze(1).to(self.compute_dtype) for c in caches] for x in ["keys", "values"]]
             k_pos_ids = torch.arange(tokens.shape[0], device=self.device)
             k[0], k[1] = self.unrope(k[0], k_pos_ids), self.unrope(k[1], k_pos_ids)
-            k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1)) for x in [k[0], v[0]]]
+            k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1, device=self.device)) for x in [k[0], v[0]]]
         return k, v
     
     def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator_3B"):
