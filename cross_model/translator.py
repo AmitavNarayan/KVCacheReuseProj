@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoConfig
+from transformers import AutoModelForCausalLM, AutoConfig, DynamicCache
 from datasets import Dataset, load_from_disk
 import einx
 import math
@@ -55,10 +55,12 @@ class Translate():
         sign = 2 * int(flip) - 1
         k = self.rope(k, k, cos, sign * sin)[1]
         return k
+
+
     
     def get_kv(self, tokens: torch.Tensor):
         with torch.no_grad():
-            caches = [m(tokens[None]).past_key_values.layers for m in (self.alt_model, self.model)]
+            caches = [m(tokens[None]).past_key_values for m in (self.alt_model, self.model)]
             k, v = [[torch.stack([getattr(l, x) for l in c]).squeeze(1).to(self.compute_dtype) for c in caches] for x in ["keys", "values"]]
             k_pos_ids = torch.arange(tokens.shape[0], device=self.device)
             k[0], k[1] = self.unrope(k[0], k_pos_ids), self.unrope(k[1], k_pos_ids)
@@ -84,7 +86,7 @@ class Translate():
             torch.save(self.w_k, f"{save_dir}_w_k.pt")
             torch.save(self.w_v, f"{save_dir}_w_v.pt")
 
-    def forward(self, kv: list[torch.Tensor], k_pos_ids: torch.Tensor):
+    def translate(self, kv: list[torch.Tensor], k_pos_ids: torch.Tensor):
         kv = [x.to(self.compute_dtype) for x in kv]
         kv[0] = self.unrope(kv[0], k_pos_ids)
         kv = [einx.id("l n t d, 1 -> l t ((n d) + 1)", x, torch.ones(1, device=x.device, dtype=self.compute_dtype)) for x in kv]
