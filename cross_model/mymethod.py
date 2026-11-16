@@ -75,7 +75,7 @@ class MyMethod():
     
     def run(self, valid_dataset: Dataset, valid_size: int=100, r: float = 0.15):
         wandb.init()
-        valid_examples = valid_dataset.select(range(valid_size))
+        valid_examples = valid_dataset.shuffle().select(range(valid_size))
         f1 = self.validate(r, valid_examples)
         alt_f1 = self.validate(r, valid_examples, is_alt=True)
         wandb.log({"f1-score": f1})
