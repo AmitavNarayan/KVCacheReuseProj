@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoConfig, DynamicCache
-from datasets import Dataset
+from transformers import AutoModelForCausalLM, AutoConfig
+from datasets import Dataset, load_from_disk
 import einx
 import math
 import sys
@@ -22,12 +22,12 @@ class Translator(torch.nn.Module):
 
 class Translate():
     def __init__(self, build_mode: bool = False,
-                  model_path: str = "Qwen2.5-1.5B-Instruct", 
-                 alt_model_path: str = "Qwen2.5-Coder-1.5B-Instruct", 
+                  model_path: str = "/scratch/an4245/Qwen/Qwen2.5-3B-Instruct", 
+                 alt_model_path: str = "/scratch/an4245/Qwen/Qwen2.5-Coder-3B-Instruct", 
                  model_dtype: torch.dtype = torch.bfloat16, 
                  compute_dtype: torch.dtype = torch.float64, 
                  device: str = "cuda",
-                 w_path: str = "/scratch/an4245/linear_translator"):
+                 w_path: str = "/scratch/an4245/linear_translator_3B"):
         self.device = device
         self.dtype = model_dtype
         self.compute_dtype = compute_dtype
@@ -67,7 +67,7 @@ class Translate():
             k[0], v[0] = [einx.id("l n t h, 1  -> l t ((n h) + 1)", x, torch.ones(1)) for x in [k[0], v[0]]]
         return k, v
     
-    def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator"):
+    def train(self, train_dataset: Dataset, reg_param: float=1e-6, save_dir: str = "/scratch/an4245/linear_translator_3B"):
         torch.set_default_dtype(self.compute_dtype)
         with torch.device(self.device):
             k, v =  [[torch.zeros(self.layers, self.d + 1, self.d + 1), torch.zeros(self.layers, self.num_heads, self.d + 1, self.d // self.num_heads)] for _ in range(2)]
@@ -96,3 +96,7 @@ class Translate():
         return kv
         
 
+if __name__=="__main__":
+    ds = load_from_disk("webtext").with_format("torch", device="cuda")
+    num_samples = 500
+    Translate(build_mode=True).train(ds["webtext"].select(range(num_samples)))

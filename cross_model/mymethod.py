@@ -88,4 +88,3 @@ if __name__=="__main__":
     input_r = float(sys.argv[1])
     input_valid_size = int(sys.argv[2])
     MyMethod().run(ds["hotpot_valid"], r = input_r, valid_size = input_valid_size)
-
