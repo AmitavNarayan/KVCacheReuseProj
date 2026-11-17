@@ -88,7 +88,3 @@ if __name__=="__main__":
     args = parser.parse_args()
     MyMethod().run(ds["hotpot_valid"], 
                 r = args.r, valid_size = args.valid_size)
-    ''' MyMethod(model_path="/scratch/an4245/Qwen2.5-O.5B-Instruct", 
-             alt_model_path="/scratch/an4245/Qwen2.5-7B-Instruct", 
-             tokenizer_path="/scratch/an4245/Qwen2.5-7B-Instruct").run(ds["hotpot_valid"], 
-            r = input_r, valid_size = input_valid_size) '''

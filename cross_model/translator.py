@@ -96,6 +96,6 @@ class Translate():
         
 
 if __name__=="__main__":
-    num_samples = 500
+    num_samples = 10000
     ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_samples)).with_format("torch", device="cuda")
     Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/linear_translator_7B")
