@@ -34,6 +34,7 @@ class MyMethod():
     def cache_to_kv(cache: DynamicCache):
         ret = [torch.stack([getattr(l, x) for l in cache.layers]).squeeze(1) for x in ["keys", "values"]]
         return ret
+    
     def validate(self, r: float, valid_examples: Dataset, is_alt: bool = False):
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()

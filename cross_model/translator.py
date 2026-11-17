@@ -3,10 +3,9 @@ import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoConfig
 from datasets import Dataset, load_from_disk
 import einx
-import math
 import sys
 
-class Translator(torch.nn.Module):
+class Linear(torch.nn.Module):
     def __init__(self, num_layers: int, d: int,  device: torch.device, dtype:torch.dtype):
         super().__init__()
         self.dtype = dtype
@@ -16,6 +15,16 @@ class Translator(torch.nn.Module):
         xw = einx.dot("l n_in t d_in, l (n_out d_out) (n_in d_in) -> l n_out t d_out", x, self.weight, n_out=x.shape[1], d_out=x.shape[3])
         y = einx.add("l n_out t d_out, l (n_out d_out) -> l n_out t d_out", xw, self.bias)
         return x+y
+
+class Translator(torch.nn.Module):
+    def __init__(self, num_layers: int, d: int,  device: torch.device, dtype:torch.dtype):
+        super().__init__()
+        self.dtype = dtype
+        self.first_linear = Linear(num_layers, d, device, dtype)
+        self.second_linear = Linear(num_layers, d, device, dtype)
+    def forward(self, x: torch.Tensor):
+        res = self.second_linear(torch.nn.ReLU(self.first_linear(x)))
+        return x + res
 
 class Translate():
     def __init__(self, build_mode: bool = False,
@@ -86,4 +95,5 @@ class Translate():
 if __name__=="__main__":
     num_samples = 10000
     ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_samples)).with_format("torch", device="cuda")
-    Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/linear_translator_7B")
+    
+    Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/translator_7B")
