@@ -39,7 +39,7 @@ class MyMethod():
         self.model.eval()
         f1 = 0
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
-            for valid_example in valid_examples:
+            for i, valid_example in enumerate(valid_examples):
                 p = valid_example["prefix"].shape[0]
                 docs = valid_example["docs"]
                 doc_len = sum(d.shape[0] for d in docs)
@@ -69,6 +69,7 @@ class MyMethod():
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
                 f1 += f1_score(output_text, answer_text)[0]
+                print(i)
             return f1 / len(valid_examples)
     
     def run(self, valid_dataset: Dataset, valid_size: int=100, r: float = 0.15):
