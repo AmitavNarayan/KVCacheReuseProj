@@ -39,12 +39,15 @@ class Translate():
         self.model = model
         self.model.eval()
         self.translators = nn.ModuleList([Translator(model.config.num_hidden_layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
+        self.translators_no_sink = nn.ModuleList([Translator(model.config.num_hidden_layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
         self.optim = torch.optim.AdamW(self.translators.parameters()) 
+        self.optim_no_sink = torch.optim.AdamW(self.translators_no_sink.parameters())
         if alt_model is not None: 
             self.alt_model = alt_model
             self.alt_model.eval()
         if param_path is not None:
             for i in range(2): self.translators[i].load_state_dict(torch.load(f"{param_path}.pt", map_location=self.device)[i])
+            for i in range(2): self.translators_no_sink[i].load_state_dict(torch.load(f"{param_path}_no_sink.pt", map_location=self.device)[i])
         
     def unrope(self, k: torch.Tensor, pos_ids: torch.Tensor, flip: bool = False):
         cos, sin = self.rotary_emb(k, pos_ids[None])
@@ -72,8 +75,15 @@ class Translate():
             self.optim.zero_grad()
             loss.backward()
             self.optim.step()
-
+            loss_no_sink = sum([((self.translators_no_sink[i](kv[i][0][:, :, 1:]) - kv[i][1][:, :, 1:]) ** 2).sum() for i in range(2)]) / (tokens.shape[0] - 1)
+            self.optim_no_sink.zero_grad()
+            loss_no_sink.backward()
+            self.optim_no_sink.step()
         torch.save([self.translators[i].state_dict() for i in range(2)], f"{save_dir}.pt")
+        torch.save([self.translators_no_sink[i].state_dict() for i in range(2)], f"{save_dir}_no_sink.pt")
+        
+        
+        
         
 
     def translate(self, cache: DynamicCache, k_pos_ids: torch.Tensor):
