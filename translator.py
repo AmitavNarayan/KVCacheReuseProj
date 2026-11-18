@@ -67,30 +67,16 @@ class Translate():
             k[0], k[1] = self.unrope(k[0], k_pos_ids), self.unrope(k[1], k_pos_ids)
         return k, v
     
-    def train(self, train_dataset: Dataset, valid_dataset: Dataset, valid_freq: float = 0.01, save_dir: str = "/scratch/an4245/translator_7B"):
-        wandb.init()
-        step = 1
+    def train(self, train_dataset: Dataset, save_dir: str = "/scratch/an4245/translator_7B"):
         for example in train_dataset:
             tokens = example["input_ids"].to(self.device)
             kv = self.get_kv(tokens)
-            loss = sum([((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).sum() for i in range(2)])
+            loss = sum([((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).sum() for i in range(2)]) / tokens.shape[0]
             self.optim.zero_grad()
             loss.backward()
             self.optim.step()
-            if step % int(valid_freq * len(train_dataset)) == 0:
-                with torch.no_grad():
-                    loss = [0,0]
-                    num_tokens = 0
-                    for example in valid_dataset:
-                        tokens = example["input_ids"].to(self.device)
-                        num_tokens += tokens.shape[0]
-                        kv = self.get_kv(tokens)
-                        for i in range(2): loss[i] += ((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).sum()
-                    for i in range(2): loss[i] = loss[i] / num_tokens
-                    wandb.log({"k-loss": loss[0].item(), "v-loss": loss[1].item()})
-            step += 1
-            wandb.finish()
         torch.save([self.translators[i].state_dict() for i in range(2)], f"{save_dir}.pt")
+        
 
     def translate(self, cache: DynamicCache, k_pos_ids: torch.Tensor):
         kv = self.cache_to_tensor(cache)

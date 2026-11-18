@@ -2,8 +2,6 @@
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import AutoTokenizer
 
-
-
 class ProcessDS:
     def __init__(self, tokenizer: AutoTokenizer,
                  inst: str = "Answer the question using the documents.", 
