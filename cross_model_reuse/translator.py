@@ -34,21 +34,18 @@ class Translate():
         self.dtype = model.dtype
         self.compute_dtype = compute_dtype
         self.d = model.config.num_key_value_heads * model.config.hidden_size // model.config.num_attention_heads
-        self.layers = model.config.num_hidden_layers 
         self.rope = sys.modules[type(model).__module__].apply_rotary_pos_emb
         self.rotary_emb = model.model.rotary_emb
         self.model = model
         self.model.eval()
-        self.translators = nn.ModuleList([Translator(self.layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
+        self.translators = nn.ModuleList([Translator(model.config.num_hidden_layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
         self.optim = torch.optim.AdamW(self.translators.parameters()) 
-        self.alt_model = alt_model
         if alt_model is not None: 
+            self.alt_model = alt_model
             self.alt_model.eval()
         if param_path is not None:
             for i in range(2): self.translators[i].load_state_dict(torch.load(f"{param_path}.pt", map_location=self.device)[i])
         
-
-
     def unrope(self, k: torch.Tensor, pos_ids: torch.Tensor, flip: bool = False):
         cos, sin = self.rotary_emb(k, pos_ids[None])
         sign = 2 * int(flip) - 1
@@ -75,6 +72,7 @@ class Translate():
             self.optim.zero_grad()
             loss.backward()
             self.optim.step()
+
         torch.save([self.translators[i].state_dict() for i in range(2)], f"{save_dir}.pt")
         
 
