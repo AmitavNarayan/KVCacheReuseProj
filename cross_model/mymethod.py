@@ -35,12 +35,12 @@ class MyMethod():
         ret = [torch.stack([getattr(l, x) for l in cache.layers]).squeeze(1) for x in ["keys", "values"]]
         return ret
     
-    def validate(self, r: float, valid_examples: Dataset, is_alt: bool = False):
+    def validate(self, recompute_ratio: float, valid_examples: Dataset, beta: float, is_alt: bool = False):
         write_model = self.alt_model if is_alt else self.model
         self.model.eval()
         f1 = 0
         with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.compute_dtype):
-            for i, valid_example in enumerate(valid_examples):
+            for step, valid_example in enumerate(valid_examples):
                 p = valid_example["prefix"].shape[0]
                 docs = valid_example["docs"]
                 doc_len = sum(d.shape[0] for d in docs)
@@ -48,12 +48,14 @@ class MyMethod():
                 prefix_docs = torch.cat((valid_example["prefix"], *docs))
                 doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
                 doc_kv = MyMethod.cache_to_kv(write_model(input_ids=prefix_docs[p:][None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values)
-                if is_alt: doc_kv = self.translate.translate(doc_kv, doc_pos)
+                if is_alt: 
+                    translated_doc_kv = self.translate.translate(doc_kv, doc_pos) 
+                    for i in range(2): doc_kv[i] = doc_kv[i] + beta * (translated_doc_kv[i] - doc_kv[i])
                 cache = self.model(input_ids=prefix_docs[:p][None]).past_key_values
                 true_kv = MyMethod.cache_to_kv(self.trunc_model(input_ids=prefix_docs[None]).past_key_values)
                 dist_k, dist_v = [torch.linalg.vector_norm(true_kv[i][1][:, p:].float()-doc_kv[i][1].float(), dim=(0,2)) for i in range(2)]
                 score = dist_k / dist_k.mean() + dist_v / dist_v.mean()
-                tok_pos = score.topk(int(r * doc_len)).indices.sort().values
+                tok_pos = score.topk(int(recompute_ratio * doc_len)).indices.sort().values
                 tok_mask = torch.zeros(doc_len, dtype=torch.bool, device=self.device).index_fill(0, tok_pos, True)
                 for l in range(self.layers): cache.update(doc_kv[0][l][:, ~tok_mask][None], doc_kv[1][l][:, ~tok_mask][None], l)
                 mask = ((p + tok_pos).unsqueeze(1) >= torch.cat((torch.arange(p, device=self.device), p + torch.arange(doc_len, device=self.device)[~tok_mask], p + tok_pos)))[None, None]
@@ -70,23 +72,23 @@ class MyMethod():
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
                 f1 += f1_score(output_text, answer_text)[0]
-                print(i)
+                print(step)
             return f1 / len(valid_examples)
     
-    def run(self, valid_dataset: Dataset, valid_size: int=100, r: float = 0.15):
+    def run(self, valid_dataset: Dataset, betas: list[float], valid_size: int=100, recompute_ratio: float = 0.15):
         wandb.init()
         valid_examples = valid_dataset.shuffle().select(range(valid_size))
-        f1 = self.validate(r, valid_examples)
-        alt_f1 = self.validate(r, valid_examples, is_alt=True)
-        wandb.log({"f1-score": f1})
-        wandb.log({"alt-f1-score": alt_f1})
+        f1 = self.validate(recompute_ratio, valid_examples)
+        wandb.log({f"{beta}-f1-score": f1})
+        for beta in betas:
+            alt_f1 = self.validate(recompute_ratio, valid_examples, beta, is_alt=True)
+            wandb.log({f"{beta}-alt-f1-score": alt_f1})
         wandb.finish()
 
 if __name__=="__main__":
     ds = load_from_disk("/scratch/an4245/hotpot").with_format("torch", device="cuda")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--r", type=float, default=0.15)
-    parser.add_argument("--valid_size", type=int, default=400)
-    args = parser.parse_args()
-    MyMethod().run(ds["hotpot_valid"], 
-                r = args.r, valid_size = args.valid_size)
+    recompute_ratio = 0.15
+    valid_size = 400
+    betas = [0.0, 0.4, 0.8, 0.9, 0.95, 0.99]
+    MyMethod().run(ds["hotpot_valid"], betas = betas, recompute_ratio = recompute_ratio, valid_size = valid_size)

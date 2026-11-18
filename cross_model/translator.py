@@ -4,6 +4,7 @@ from transformers import AutoModelForCausalLM, AutoConfig
 from datasets import Dataset, load_from_disk
 import einx
 import sys
+import wandb
 
 class Linear(torch.nn.Module):
     def __init__(self, num_layers: int, d: int,  device: torch.device, dtype:torch.dtype):
@@ -23,8 +24,9 @@ class Translator(torch.nn.Module):
         self.first_linear = Linear(num_layers, d, device, dtype)
         self.second_linear = Linear(num_layers, d, device, dtype)
     def forward(self, x: torch.Tensor):
-        res = self.second_linear(torch.nn.ReLU(self.first_linear(x)))
-        return x + res
+        h = torch.relu(self.first_linear(x))
+        y = x + self.second_linear(h) - h
+        return y
 
 class Translate():
     def __init__(self, build_mode: bool = False,
@@ -33,7 +35,7 @@ class Translate():
                  model_dtype: torch.dtype = torch.bfloat16, 
                  compute_dtype: torch.dtype = torch.float64, 
                  device: str = "cuda",
-                 param_path: str = "/scratch/an4245/linear_translator_7B"):
+                 param_path: str = "/scratch/an4245/translator_7B"):
         self.device = device
         self.dtype = model_dtype
         config = AutoConfig.from_pretrained(model_path)
@@ -70,17 +72,31 @@ class Translate():
             k[0], k[1] = self.unrope(k[0], k_pos_ids), self.unrope(k[1], k_pos_ids)
         return k, v
     
-    def train(self, train_dataset: Dataset, save_dir: str = "/scratch/an4245/linear_translator_7B"):
+    def train(self, train_dataset: Dataset, valid_dataset: Dataset, valid_freq: float = 0.01, save_dir: str = "/scratch/an4245/translator_7B"):
+        wandb.init()
         torch.set_default_dtype(self.compute_dtype)
+        step = 1
         for example in train_dataset:
             tokens = example["input_ids"].to(self.device)
             kv = self.get_kv(tokens)
             for i in range(2):
-                loss = ((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).mean()
+                loss = ((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).sum()
                 self.optims[i].zero_grad()
                 loss.backward()
                 self.optims[i].step()
-        
+            if step % int(valid_freq * len(train_dataset)) == 0:
+                with torch.no_grad():
+                    loss = [0,0]
+                    num_tokens = 0
+                    for example in valid_dataset:
+                        tokens = example["input_ids"].to(self.device)
+                        num_tokens += tokens.shape[0]
+                        kv = self.get_kv(tokens)
+                        for i in range(2): loss[i] += ((self.translators[i](kv[i][0]) - kv[i][1]) ** 2).sum()
+                    for i in range(2): loss[i] = loss[i] / num_tokens
+                    wandb.log({"k-loss": loss[0], "v-loss": loss[1]})
+            step += 1
+
         torch.save([self.translators[i].state_dict() for i in range(2)], f"{save_dir}.pt")
 
     def translate(self, kv: list[torch.Tensor], k_pos_ids: torch.Tensor):
@@ -93,7 +109,8 @@ class Translate():
         
 
 if __name__=="__main__":
-    num_samples = 10000
-    ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_samples)).with_format("torch", device="cuda")
-    
-    Translate(build_mode=True).train(ds, save_dir="/scratch/an4245/translator_7B")
+    num_train_samples = 10000
+    num_valid_samples = 800
+    train_ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_train_samples)).with_format("torch", device="cuda")
+    valid_ds = load_from_disk("/scratch/an4245/webtext").shuffle().select(range(num_valid_samples)).with_format("torch", device="cuda")
+    Translate(build_mode=True).train(train_ds, valid_ds)
