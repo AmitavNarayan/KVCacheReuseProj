@@ -1,6 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DynamicCache
 import torch
-import wandb
 from helpers.hotpot_evaluate_v1 import f1_score
 from datasets import Dataset, load_from_disk
 import torch.nn.functional as F 

@@ -1,15 +1,14 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DynamicCache
 import torch
-import wandb
 from helpers.hotpot_evaluate_v1 import f1_score
 from datasets import Dataset, load_from_disk
 import torch.nn.functional as F 
 from reuse_methods.template import Template
-from reuse_methods.helper import Translate 
+from helpers.translator import Translate 
 import copy
 
 class MyMethod(Template):
-    def __init__(self, recompute_ratio: float = 0.15, **kwargs):
+    def __init__(self, translator: Translate, recompute_ratio: float = 0.15, **kwargs):
         super().__init__(**kwargs)
         config = copy.deepcopy(self.model.config)
         config.num_hidden_layers = 2
@@ -17,7 +16,9 @@ class MyMethod(Template):
         self.trunc_model = AutoModelForCausalLM.from_pretrained(self.model.name_or_path, config=config, dtype=self.model.dtype).to(self.device)
         self.trunc_model.requires_grad_(False)
         self.trunc_model.eval()
-        self.translate = Translate()
+        self.translator = translator
+
+
     def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
         write_model = self.alt_model if is_alt else self.model
         doc_pos = torch.tensor([], dtype=torch.long, device=self.device)
@@ -29,7 +30,7 @@ class MyMethod(Template):
         doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
         docs = torch.cat(docs)
         doc_cache = write_model(input_ids=docs[None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values
-        
+        if is_alt: doc_cache = self.translator.translate(doc_cache, doc_pos)
         temp_cache = DynamicCache()
         for l in range(2): temp_cache.update(cache.layers[l].keys, cache.layers[l].values, l)
         true_cache = self.trunc_model(input_ids=docs[None], past_key_values=temp_cache).past_key_values

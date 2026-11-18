@@ -4,12 +4,14 @@ import wandb
 from datasets import Dataset
 from helpers.hotpot_evaluate_v1 import f1_score as compute_f1
 from collections.abc import Callable
+from helpers.translator import Translate
 
 
 class Template():
     def __init__(self, model: AutoModelForCausalLM, 
                  alt_model: AutoModelForCausalLM, 
                  tokenizer: AutoTokenizer, 
+                 translator: Translate | None = None
                  forward_dtype: torch.dtype = torch.bfloat16,
                  device: torch.device | str = "cuda", 
                  max_new_tokens: int=64):
@@ -23,6 +25,7 @@ class Template():
         self.tokenizer = tokenizer
         self.max_new_tokens = max_new_tokens
         self.forward_dtype = forward_dtype
+        self.translator = translator
 
     def build_cache(self, prefix_cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
         return

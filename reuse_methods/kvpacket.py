@@ -1,6 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 import torch
-import wandb
 import torch.nn.functional as F
 from datasets import Dataset
 from vllm import LLM, SamplingParams
