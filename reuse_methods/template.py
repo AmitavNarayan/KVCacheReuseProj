@@ -49,7 +49,7 @@ class Template():
             f1 = f1 / len(valid_dataset)
         return f1
  
-    def run(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int):
+    def run(self, train_dataset: Dataset, valid_dataset: Dataset, step_size: int = 32):
         wandb.init()
         self.model.train()
         self.train(train_dataset, step_size)
