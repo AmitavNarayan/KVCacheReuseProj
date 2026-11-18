@@ -1,5 +1,5 @@
 from helpers.translator import Translate
-from mymethod import MyMethod
+from cross_model_reuse.mymethod import MyMethod
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_from_disk
 from helpers.process_ds import ProcessDS
@@ -14,7 +14,7 @@ if __name__=="__main__":
     wbtx_n, wbtx_v = 5000,400
     webtext = load("webtext", wbtx_n, wbtx_v)
     translator = Translate(model=model, alt_model=alt_model)
-    translator.train(webtext["train"], webtext["test"])
+    translator.train(webtext["train"])
 
     msq_n, msq_v = 801,800
     musique = load("musique", msq_n, msq_v) 
