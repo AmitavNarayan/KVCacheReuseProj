@@ -1,13 +1,12 @@
 from transformers import AutoModelForCausalLM, DynamicCache
 import torch
 from utils.template import Template
-from cross_model_reuse.translator import Translate 
+from cross_model_reuse.kv_translator import KVTranslator
 import copy
-from datasets import Dataset
 from utils.hotpot_evaluate_v1 import f1_score as compute_f1
 
 class MyMethod(Template):
-    def __init__(self, translator: Translate, recompute_ratio: float = 0.15, **kwargs):
+    def __init__(self, kvt: KVTranslator, recompute_ratio: float = 0.15, **kwargs):
         super().__init__(**kwargs)
         config = copy.deepcopy(self.model.config)
         config.num_hidden_layers = 2
@@ -15,11 +14,10 @@ class MyMethod(Template):
         self.trunc_model = AutoModelForCausalLM.from_pretrained(self.model.name_or_path, config=config, dtype=self.model.dtype).to(self.device)
         self.trunc_model.requires_grad_(False)
         self.trunc_model.eval()
-        self.translator = translator
+        self.kvt = kvt
 
 
-    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
-        write_model = self.alt_model if is_alt else self.model
+    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], variant: str):
         doc_pos = torch.tensor([], dtype=torch.long, device=self.device)
         p = cache.get_seq_length()
         offset = p
@@ -28,8 +26,12 @@ class MyMethod(Template):
             offset += doc.shape[0]
         doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
         docs = torch.cat(docs)
+        write_model = self.alt_model if "alt" in variant else self.model
+
         doc_cache = write_model(input_ids=docs[None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values
-        if is_alt: doc_cache = self.translator.translate(doc_cache, doc_pos)
+        if "tr" in variant: 
+            tr_type = "base" if "base" in variant else "no_sink"
+            doc_cache = self.kvt.translate(doc_cache, doc_pos, tr_type)
         temp_cache = DynamicCache()
         for l in range(2): temp_cache.update(cache.layers[l].keys, cache.layers[l].values, l)
         true_cache = self.trunc_model(input_ids=docs[None], past_key_values=temp_cache).past_key_values
@@ -44,25 +46,6 @@ class MyMethod(Template):
         if tok_mask.any(): self.model(input_ids=docs[tok_mask][None], attention_mask=mask, position_ids=(p + tok_pos)[None], past_key_values=cache, logits_to_keep=1)
         return cache
 
-    def validate(self, valid_dataset: Dataset, is_alt: bool = False):
-        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.forward_dtype):
-            f1 = 0
-            for valid_example in valid_dataset:
-                prefix_cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
-                cache = self.build_cache(prefix_cache, valid_example["docs"], is_alt)
-                output_tokens = []
-                output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
-                for _ in range(self.max_new_tokens):
-                    output_tokens.append(output.logits[0, 0].argmax())
-                    if output_tokens[-1]==self.tokenizer.eos_token_id:
-                        break
-                    output = self.model(input_ids = output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, logits_to_keep=1)
-                output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
-                answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
-                f1 += compute_f1(output_text, answer_text)[0] 
-                    
-            f1 = f1 / len(valid_dataset)
-        return f1
 
 
 

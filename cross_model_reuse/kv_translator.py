@@ -16,7 +16,7 @@ class Linear(torch.nn.Module):
         y = einx.add("l n_out t d_out, l (n_out d_out) -> l n_out t d_out", xw, self.bias)
         return y
 
-class Translator(torch.nn.Module):
+class Map(torch.nn.Module):
     def __init__(self, num_layers: int, d: int,  device: torch.device, dtype:torch.dtype):
         super().__init__()
         self.first_linear = Linear(num_layers, d, device, dtype)
@@ -25,7 +25,7 @@ class Translator(torch.nn.Module):
         y = x + self.second_linear(torch.relu(x + self.first_linear(x)))  
         return y
 
-class Translate():
+class KVTranslator():
     def __init__(self, model: AutoModelForCausalLM,
                      alt_model: AutoModelForCausalLM = None, 
                  compute_dtype: torch.dtype = torch.float64, 
@@ -39,17 +39,17 @@ class Translate():
         self.rotary_emb = model.model.rotary_emb
         self.model = model
         self.model.eval()
-        self.translators = {}
+        self.maps = {}
         self.optims = {}
         for tr_type in translator_types:
-            self.translators[tr_type] = nn.ModuleList([Translator(model.config.num_hidden_layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
-            self.optims[tr_type] = torch.optim.AdamW(self.translators[tr_type].parameters())
+            self.maps[tr_type] = nn.ModuleList([Map(model.config.num_hidden_layers, self.d, self.device, dtype=self.compute_dtype) for _ in range(2)])
+            self.optims[tr_type] = torch.optim.AdamW(self.maps[tr_type].parameters())
         if alt_model is not None: 
             self.alt_model = alt_model
             self.alt_model.eval()
         if param_path is not None:
-            for tr_type in self.translators: 
-                for i in range(2): self.translators[tr_type][i].load_state_dict(torch.load(f"{param_path}_{tr_type}.pt", map_location=self.device)[i])
+            for tr_type in self.maps: 
+                for i in range(2): self.maps[tr_type][i].load_state_dict(torch.load(f"{param_path}_{tr_type}.pt", map_location=self.device)[i])
         
     def unrope(self, k: torch.Tensor, pos_ids: torch.Tensor, flip: bool = False):
         cos, sin = self.rotary_emb(k, pos_ids[None])
@@ -73,22 +73,22 @@ class Translate():
         for example in train_dataset:
             tokens = example["input_ids"].to(self.device)
             kv = self.get_kv(tokens)
-            for tr_type in self.translators:
+            for tr_type in self.maps:
                 if tr_type=="base":
-                    loss = sum([((self.translators[tr_type][i](kv[i][0]) - kv[i][1]) ** 2).sum() for i in range(2)]) / tokens.shape[0]
+                    loss = sum([((self.maps[tr_type][i](kv[i][0]) - kv[i][1]) ** 2).sum() for i in range(2)]) / tokens.shape[0]
                 if tr_type=="no_sink":
-                    loss = sum([((self.translators[tr_type][i](kv[i][0])[:, :, 1:] - kv[i][1][:, :, 1:]) ** 2).sum() for i in range(2)]) / (tokens.shape[0] - 1)
+                    loss = sum([((self.maps[tr_type][i](kv[i][0])[:, :, 1:] - kv[i][1][:, :, 1:]) ** 2).sum() for i in range(2)]) / (tokens.shape[0] - 1)
                 self.optims[tr_type].zero_grad()
                 loss.backward()
                 self.optims[tr_type].step()
-        for tr_type in self.translators: torch.save([self.translators[tr_type][i].state_dict() for i in range(2)], f"{save_dir}_{tr_type}.pt")
+        for tr_type in self.maps: torch.save([self.maps[tr_type][i].state_dict() for i in range(2)], f"{save_dir}_{tr_type}.pt")
         
         
 
     def translate(self, cache: DynamicCache, k_pos_ids: torch.Tensor, tr_type: str):
         kv = self.cache_to_tensor(cache)
         kv[0] = self.unrope(kv[0], k_pos_ids)
-        for i in range(2): kv[i] = self.translators[tr_type][i](kv[i])
+        for i in range(2): kv[i] = self.maps[tr_type][i](kv[i])
         kv[0] = self.unrope(kv[0], k_pos_ids, flip=True)
         kv = [x.to(self.dtype) for x in kv]
         for l, layer in enumerate(cache.layers): layer.keys, layer.values = kv[0][l][None], kv[1][l][None]

@@ -6,6 +6,7 @@ import copy
 class CacheBlend(Template):
     def __init__(self, recompute_ratio: float = 0.15, **kwargs):
         super().__init__(**kwargs)
+        self.variants = "main", "alt"
         config = copy.deepcopy(self.model.config)
         config.num_hidden_layers = 2
         self.r = recompute_ratio
@@ -13,8 +14,8 @@ class CacheBlend(Template):
         self.trunc_model.requires_grad_(False)
         self.trunc_model.eval()
     
-    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
-        write_model = self.alt_model if is_alt else self.model
+    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], variant: str):
+        
         doc_pos = torch.tensor([], dtype=torch.long, device=self.device)
         p = cache.get_seq_length()
         offset = p
@@ -23,6 +24,7 @@ class CacheBlend(Template):
             offset += doc.shape[0]
         doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
         docs = torch.cat(docs)
+        write_model = self.alt_model if "alt" in variant else self.model
         doc_cache = write_model(input_ids=docs[None], position_ids=doc_pos[None], attention_mask=doc_mask).past_key_values
         temp_cache = DynamicCache()
         for l in range(2): temp_cache.update(cache.layers[l].keys, cache.layers[l].values, l)

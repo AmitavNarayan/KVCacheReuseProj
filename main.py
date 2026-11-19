@@ -1,4 +1,4 @@
-from cross_model_reuse.translator import Translate
+from cross_model_reuse.kv_translator import KVTranslator
 from cross_model_reuse.mymethod import MyMethod
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_from_disk
@@ -12,9 +12,9 @@ if __name__=="__main__":
 
     wbtx_n, wbtx_v = 5000,400
     webtext = load("webtext", wbtx_n, wbtx_v)
-    translator = Translate(model=model, alt_model=alt_model)
-    translator.train(webtext["train"])
+    kvt = KVTranslator(model=model, alt_model=alt_model)
+    kvt.train(webtext["train"])
 
     msq_n, msq_v = 801,800
     musique = load("musique", msq_n, msq_v) 
-    MyMethod(model=model, alt_model=alt_model, tokenizer=tokenizer, translator=translator).run(musique["train"], musique["test"])
+    MyMethod(model=model, alt_model=alt_model, tokenizer=tokenizer, kvt=kvt).run(musique["train"], musique["test"])

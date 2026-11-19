@@ -12,6 +12,7 @@ class KVLink(Template):
                  lr: float=5e-6,
                  **kwargs):
         super().__init__(**kwargs)
+        self.variants = "main", "alt"
         self.model.gradient_checkpointing_enable()
         self.link_tokens = [f"<link{a+1}_{b+1}>" for a in range(max_num_docs) for b in range(num_link_tokens)]
         self.num_link_tokens = num_link_tokens
@@ -21,16 +22,18 @@ class KVLink(Template):
         self.link_ids = torch.tensor(self.tokenizer.convert_tokens_to_ids(self.link_tokens), device=self.device, dtype=torch.long).reshape(max_num_docs, num_link_tokens)
 
         
-    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool = False):
-        write_model = self.alt_model if is_alt else self.model
+    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], variant: str):
+        
         doc_ids = torch.tensor([], device=self.device, dtype=torch.long)
         ls_ids = torch.tensor([], device=self.device, dtype=torch.long)
-        offset = cache.get_seq_length()
+        p = cache.get_seq_length()
+        offset = p
         for doc in docs: 
             ls_ids = torch.cat((ls_ids, offset + torch.arange(doc.shape[0], doc.shape[0]+self.num_link_tokens, device=self.device)), dim=0)
             doc_ids = torch.cat((doc_ids, offset + torch.arange(doc.shape[0], device=self.device)), dim=0)
             offset += self.num_link_tokens + doc.shape[0]
         doc_mask = torch.block_diag(*[torch.ones((d.shape[0], d.shape[0]), device=self.device).tril() for d in docs]).bool()[None, None]
+        write_model = self.alt_model if "alt" in variant else self.model
         doc_cache = write_model(input_ids=torch.cat(docs)[None], attention_mask=doc_mask, position_ids=doc_ids[None]).past_key_values
         for l, layer in enumerate(doc_cache.layers):
             cache.update(layer.keys, layer.values, l)

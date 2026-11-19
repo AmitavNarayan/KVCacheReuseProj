@@ -24,13 +24,14 @@ class KVPacket(Template):
                  lr: float=1e-3,
                  **kwargs):
         super().__init__(**kwargs)
+        self.variants = "main", "alt"
         self.model.requires_grad_(False)
         self.packetize = Packetize(self.device, self.model.config.hidden_size, header_len)
         self.optimizer = torch.optim.AdamW(self.packetize.parameters(), lr=lr)
         self.vllm = LLM(self.model.config.name_or_path, dtype=model_dtype, gpu_memory_utilization=0.3, enable_sleep_mode=True)
 
-    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
-        write_model = self.alt_model if is_alt else self.model
+    def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], variant: str):
+        write_model = self.alt_model if "alt" in variant else self.model
         write_embed = write_model.get_input_embeddings()
         packets = [self.packetize(write_embed(doc)) for doc in docs]
         doc_mask = torch.block_diag(*[torch.ones((pd.shape[0], pd.shape[0]), dtype=torch.bool, device=self.device).tril() for pd in packets])[None, None]
