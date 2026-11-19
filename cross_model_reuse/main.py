@@ -1,8 +1,7 @@
-from helpers.translator import Translate
+from translator import Translate
 from cross_model_reuse.mymethod import MyMethod
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_from_disk
-from helpers.process_ds import ProcessDS
 
 if __name__=="__main__":
      

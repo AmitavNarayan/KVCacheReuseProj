@@ -3,8 +3,7 @@ import torch
 import torch.nn.functional as F
 from datasets import Dataset
 from vllm import LLM, SamplingParams
-from datasets import load_from_disk 
-from reuse_methods.template import Template
+from single_model_reuse.template import Template
 
 
 

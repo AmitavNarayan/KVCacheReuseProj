@@ -1,10 +1,7 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DynamicCache
+from transformers import AutoModelForCausalLM, DynamicCache
 import torch
-from helpers.hotpot_evaluate_v1 import f1_score
-from datasets import Dataset, load_from_disk
-import torch.nn.functional as F 
-from reuse_methods.template import Template
-from helpers.translator import Translate 
+from single_model_reuse.template import Template
+from cross_model_reuse.translator import Translate 
 import copy
 
 class MyMethod(Template):

@@ -1,9 +1,8 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
+from transformers import DynamicCache
 import torch
-from helpers.hotpot_evaluate_v1 import f1_score
-from datasets import Dataset, load_from_disk
+from datasets import Dataset 
 import torch.nn.functional as F 
-from reuse_methods.method_template import Template
+from single_model_reuse.template import Template
 
 
 class KVLink(Template):
