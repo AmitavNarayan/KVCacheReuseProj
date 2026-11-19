@@ -1,4 +1,4 @@
-from translator import Translate
+from cross_model_reuse.translator import Translate
 from cross_model_reuse.mymethod import MyMethod
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_from_disk

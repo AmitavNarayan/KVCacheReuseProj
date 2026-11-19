@@ -1,8 +1,10 @@
 from transformers import AutoModelForCausalLM, DynamicCache
 import torch
-from single_model_reuse.template import Template
+from utils.template import Template
 from cross_model_reuse.translator import Translate 
 import copy
+from datasets import Dataset
+from utils.hotpot_evaluate_v1 import f1_score as compute_f1
 
 class MyMethod(Template):
     def __init__(self, translator: Translate, recompute_ratio: float = 0.15, **kwargs):
@@ -41,6 +43,26 @@ class MyMethod(Template):
         mask = ((p + tok_pos).unsqueeze(1) >= torch.cat((torch.arange(p, device=self.device), p + torch.arange(offset - p, device=self.device)[~tok_mask], p + tok_pos)))[None, None]
         if tok_mask.any(): self.model(input_ids=docs[tok_mask][None], attention_mask=mask, position_ids=(p + tok_pos)[None], past_key_values=cache, logits_to_keep=1)
         return cache
-    
+
+    def validate(self, valid_dataset: Dataset, is_alt: bool = False):
+        with torch.no_grad(), torch.autocast(device_type=self.device, dtype=self.forward_dtype):
+            f1 = 0
+            for valid_example in valid_dataset:
+                prefix_cache = self.model(input_ids=valid_example["prefix"][None]).past_key_values
+                cache = self.build_cache(prefix_cache, valid_example["docs"], is_alt)
+                output_tokens = []
+                output = self.model(input_ids = valid_example["suffix"][None], past_key_values=cache, logits_to_keep=1)
+                for _ in range(self.max_new_tokens):
+                    output_tokens.append(output.logits[0, 0].argmax())
+                    if output_tokens[-1]==self.tokenizer.eos_token_id:
+                        break
+                    output = self.model(input_ids = output_tokens[-1].reshape(1,1), past_key_values=output.past_key_values, logits_to_keep=1)
+                output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
+                answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
+                f1 += compute_f1(output_text, answer_text)[0] 
+                    
+            f1 = f1 / len(valid_dataset)
+        return f1
+
 
 

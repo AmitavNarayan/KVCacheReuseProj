@@ -1,6 +1,6 @@
 from transformers import AutoModelForCausalLM, DynamicCache
 import torch
-from single_model_reuse.template import Template
+from utils.template import Template
 import copy
 
 class CacheBlend(Template):
@@ -12,6 +12,7 @@ class CacheBlend(Template):
         self.trunc_model = AutoModelForCausalLM.from_pretrained(self.model.name_or_path, config=config, dtype=self.model.dtype).to(self.device)
         self.trunc_model.requires_grad_(False)
         self.trunc_model.eval()
+    
     def build_cache(self, cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
         write_model = self.alt_model if is_alt else self.model
         doc_pos = torch.tensor([], dtype=torch.long, device=self.device)

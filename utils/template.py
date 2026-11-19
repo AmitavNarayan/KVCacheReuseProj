@@ -25,7 +25,7 @@ class Template():
 
     def build_cache(self, prefix_cache: DynamicCache, docs: list[torch.Tensor], is_alt: bool):
         return
-
+    
     def train(self, train_dataset: Dataset, step_size: int):
         return
     
@@ -45,6 +45,7 @@ class Template():
                 output_text = self.tokenizer.decode(output_tokens, skip_special_tokens=True)
                 answer_text = self.tokenizer.decode(valid_example["answer"], skip_special_tokens=True)
                 f1 += compute_f1(output_text, answer_text)[0] 
+                    
             f1 = f1 / len(valid_dataset)
         return f1
  

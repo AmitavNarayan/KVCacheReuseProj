@@ -2,7 +2,7 @@ from transformers import DynamicCache
 import torch
 from datasets import Dataset 
 import torch.nn.functional as F 
-from single_model_reuse.template import Template
+from utils.template import Template
 
 
 class KVLink(Template):

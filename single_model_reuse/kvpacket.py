@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from datasets import Dataset
 from vllm import LLM, SamplingParams
-from single_model_reuse.template import Template
+from utils.template import Template
 
 
 
